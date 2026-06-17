@@ -1,0 +1,8 @@
+node_modules/
+__pycache__/
+.dart_tool/
+build/
+.venv/
+.env
+*.log
+.claude/settings.local.json

@@ -1,0 +1,81 @@
+# Lexika API Contract (MVP slice — Phase 0+1+2)
+
+Backend base URL: `http://localhost:8000`. All JSON. No auth in this slice —
+every request acts as the seeded `user_id = 1`. (ponytail: Firebase auth deferred,
+single-user until the core loop is proven. Add when more than the test user exists.)
+
+CORS: allow all origins (dev only).
+
+## Words
+
+### GET /words/lookup?word={w}
+Cache check (`words` table) → on miss, Free Dictionary API (api.dictionaryapi.dev) →
+join `word_metadata` for cefr/academic → write cache → return.
+404 if the word isn't a real word (dictionary API 404).
+
+```json
+{
+  "id": 12,
+  "headword": "ubiquitous",
+  "phonetic": "/juːˈbɪk.wɪ.təs/",
+  "audio_url": "https://.../ubiquitous.mp3",
+  "part_of_speech": "adjective",
+  "definition_en": "Present, appearing, or found everywhere...",
+  "example_en": "Smartphones have become ubiquitous in modern classrooms.",
+  "cefr_level": "B2",          // null if not in word_metadata
+  "is_academic": true,
+  "translation_ru": "повсеместный",   // null in this slice (translation deferred)
+  "translation_kk": null,
+  "synonyms": ["omnipresent", "pervasive", "widespread"],
+  "antonyms": ["rare", "scarce"]
+}
+```
+ponytail: live RU/KK translation (Google Cloud Translate) deferred — needs billing key.
+Fields stay in the schema, return null for now. Add when a key exists.
+
+### GET /words/{word}/relations
+synonyms/antonyms from cached dictionary response; word_family + nominalization from
+the curated `word_family` table (empty arrays / null if not seeded — never invent).
+
+```json
+{
+  "synonyms": ["omnipresent", "pervasive"],
+  "antonyms": ["rare", "scarce"],
+  "word_family": [{"word": "ubiquity", "pos": "noun"}, {"word": "ubiquitously", "pos": "adv"}],
+  "nominalization": {            // null if not seeded
+    "base_pos": "adj", "base_example": "Smartphones are ubiquitous in classrooms now.",
+    "noun_word": "ubiquity",     "noun_example": "The ubiquity of smartphones changed classrooms."
+  }
+}
+```
+
+## Decks
+
+### GET /decks  → array
+```json
+[{"id":1,"name":"Social media unit","card_count":28,"due_count":18,"is_system_deck":false}]
+```
+### POST /decks  body `{"name":"...","cefr_level":null}` → created deck object
+### POST /decks/{id}/cards  body `{"word_id":12}` → 201, `{"ok":true}`
+   (auto-create-by-level deck flow can come later; explicit deck id for now)
+
+## Review (SM-2)
+
+### GET /review/due?limit=20  → array of cards due now (next_review_at <= now), newest words included
+```json
+[{"word_id":12,"headword":"candid","phonetic":"/ˈkæn.dɪd/","audio_url":"...",
+  "translation":"откровенный","definition_en":"...","example_en":"..."}]
+```
+### POST /review/submit  body `{"word_id":12,"grade":"good"}`  grade ∈ again|hard|good|easy
+SM-2 update of `card_progress`. → `{"next_review_at":"2026-06-21T...","interval_days":4}`
+
+SM-2 reference: ease starts 2.5; again→reset reps, interval 0 (≈<1m); hard→interval*1.2,
+ease-0.15; good→standard sequence (1d, 6d, interval*ease); easy→interval*ease*1.3, ease+0.15.
+Ease floor 1.3. Keep it in one well-commented function with an assert-based self-check.
+
+## Seed (runs once on `make seed` / startup)
+- Load CEFR-J wordlist CSV + AWL list into `word_metadata(word, cefr_level, is_academic, frequency_rank)`.
+- Load AWL word-family groupings into `word_family`.
+- Create `user_id=1` test user (native_language='ru') and a couple of demo decks so the UI isn't empty.
+ponytail: if the CEFR-J / AWL source files aren't bundled, ship a small committed sample
+CSV (a few hundred rows) so the app runs offline; full dataset is a drop-in replacement.

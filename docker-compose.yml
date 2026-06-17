@@ -1,0 +1,15 @@
+# ponytail: Postgres only. No Redis (plan allows a Postgres table for caching),
+# no pgadmin, no app container — backend runs on host with uv during dev.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lexika
+      POSTGRES_PASSWORD: lexika
+      POSTGRES_DB: lexika
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:

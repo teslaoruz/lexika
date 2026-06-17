@@ -1,0 +1,252 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../api/models.dart';
+import '../../api/providers.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/app_card.dart';
+import '../../widgets/bounce_press.dart';
+import '../review/review_screen.dart';
+
+class DecksScreen extends ConsumerWidget {
+  const DecksScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final decks = ref.watch(decksProvider);
+
+    return decks.when(
+      loading: () => const Center(
+          child: CircularProgressIndicator(color: AppColors.violet)),
+      error: (_, _) => const Center(child: Text('Could not load decks')),
+      data: (list) {
+        final totalDue = list.fold<int>(0, (a, d) => a + d.dueCount);
+        final totalSaved = list.fold<int>(0, (a, d) => a + d.cardCount);
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _statBox('$totalDue', 'Cards due today',
+                      const [AppColors.coral, Color(0xFFFF8A7A)]),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _statBox('$totalSaved', 'Words saved',
+                      const [AppColors.violet, Color(0xFF8B7EF0)]),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            _weakBanner(context),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Your decks',
+                    style: AppTheme.baloo(size: 19, weight: FontWeight.w700)),
+                BouncePress(
+                  onTap: () {},
+                  pressedScale: 0.94,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.violetLight,
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Text('+ New deck',
+                        style: AppTheme.baloo(
+                            size: 12.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.violet)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            for (final d in list) ...[
+              _deckCard(context, d),
+              const SizedBox(height: 10),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _statBox(String num, String label, List<Color> colors) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colors,
+          ),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: AppColors.shadowSm,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(num,
+                style: AppTheme.baloo(
+                    size: 28,
+                    weight: FontWeight.w800,
+                    height: 1,
+                    color: AppColors.white)),
+            const SizedBox(height: 5),
+            Text(label,
+                style: AppTheme.quick(
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: AppColors.white.withValues(alpha: 0.85))),
+          ],
+        ),
+      );
+
+  Widget _weakBanner(BuildContext context) => BouncePress(
+        onTap: () => _openReview(context),
+        pressedScale: 0.97,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppColors.pink, Color(0xFFFF6FA0)],
+            ),
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: AppColors.shadowPink,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.white.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Text('💪', style: TextStyle(fontSize: 20)),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Practice your weak words',
+                        style: AppTheme.baloo(
+                            size: 15,
+                            weight: FontWeight.w700,
+                            color: AppColors.white)),
+                    const SizedBox(height: 2),
+                    Text('14 words need extra attention',
+                        style: AppTheme.quick(
+                            size: 12,
+                            weight: FontWeight.w600,
+                            color: AppColors.white.withValues(alpha: 0.85))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  Widget _deckCard(BuildContext context, Deck d) {
+    final initials = _initials(d.name);
+    final (bg, fg) = _deckColors(d);
+    return AppCard(
+      onTap: () => _openReview(context),
+      radius: 22,
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(initials,
+                style: AppTheme.baloo(
+                    size: 16, weight: FontWeight.w700, color: fg)),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(d.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTheme.quick(
+                        size: 15, weight: FontWeight.w700)),
+                const SizedBox(height: 3),
+                Text('${d.cardCount} cards',
+                    style: AppTheme.quick(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.inkFaint)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: d.dueCount == 0 ? AppColors.mintLight : AppColors.pinkLight,
+              borderRadius: BorderRadius.circular(100),
+            ),
+            child: Text(d.dueCount == 0 ? 'All done' : '${d.dueCount} due',
+                style: AppTheme.baloo(
+                    size: 11.5,
+                    weight: FontWeight.w700,
+                    color: d.dueCount == 0
+                        ? AppColors.mintDark
+                        : AppColors.antText)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openReview(BuildContext context) {
+    Navigator.of(context).push(PageRouteBuilder(
+      opaque: false,
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (_, a, _) => FadeTransition(
+        opacity: a,
+        child: SlideTransition(
+          position: Tween(begin: const Offset(0, 0.04), end: Offset.zero)
+              .animate(CurvedAnimation(parent: a, curve: kEaseSmooth)),
+          child: const ReviewScreen(),
+        ),
+      ),
+    ));
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+  }
+
+  (Color, Color) _deckColors(Deck d) {
+    // Cycle the palette by deck id, mirroring the prototype's varied icons.
+    const palette = [
+      (AppColors.amberLight, AppColors.amberDark),
+      (AppColors.mintLight, AppColors.mintDark),
+      (AppColors.skyLight, Color(0xFF0288A8)),
+      (AppColors.pinkLight, AppColors.antText),
+    ];
+    return palette[d.id % palette.length];
+  }
+}
