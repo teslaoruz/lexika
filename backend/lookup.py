@@ -1,14 +1,14 @@
 """Word lookup: cache-check -> Free Dictionary API -> word_metadata join -> cache write.
 Shared by the /words/lookup endpoint and seed.py so demo decks get real data.
 
-ponytail: live RU/KK translation deferred (needs a billing key) — translation_*
-columns stay null, exactly as CONTRACT.md says.
+The English definition is the primary content; translations are a cached extra
+(see translate.py) stored in the word's `translations` JSON map.
 """
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from models import Word, WordMetadata
-from translate import translate
+from translate import translate_all
 
 DICT_API = "https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
 
@@ -99,10 +99,10 @@ def get_or_fetch_word(db: Session, raw_word: str, client: httpx.Client | None = 
     word = Word(
         cefr_level=meta.cefr_level if meta else None,
         is_academic=bool(meta.is_academic) if meta else False,
-        # Translate the headword only (cheap, one word). None on failure — never
-        # blocks the lookup. Cached on this row, so re-lookups don't re-translate.
-        translation_ru=translate(headword, "ru"),
-        translation_kk=translate(headword, "kk"),
+        # Translate the headword into every TARGET_LANGS (cheap, one word each).
+        # Failures are simply omitted — never blocks the lookup. Cached on this
+        # row, so re-lookups don't re-translate.
+        translations=translate_all(headword),
         source="dictionaryapi.dev",
         **fields,
     )

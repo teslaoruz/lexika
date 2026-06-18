@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/bounce_press.dart';
+import '../games/games_screen.dart';
 import '../review/review_screen.dart';
 
 class DecksScreen extends ConsumerWidget {
@@ -41,7 +42,9 @@ class DecksScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 22),
             _weakBanner(context),
-            const SizedBox(height: 18),
+            const SizedBox(height: 22),
+            const GamesSection(),
+            const SizedBox(height: 22),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [

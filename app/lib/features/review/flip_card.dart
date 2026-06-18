@@ -6,6 +6,7 @@ import '../../api/models.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/play_button.dart';
+import '../../widgets/sfx.dart';
 
 /// Real 3D Y-axis flip card. Front = English headword, back = translation.
 /// Tap to flip; uses Matrix4 rotateY with perspective entry (not a crossfade).
@@ -43,6 +44,7 @@ class _FlipCardState extends State<FlipCard>
   }
 
   void _flip() {
+    Sfx.flip();
     if (_c.value < 0.5) {
       _c.forward();
     } else {
@@ -82,9 +84,8 @@ class _FlipCardState extends State<FlipCard>
 
   Widget _face({required bool back}) {
     final c = widget.card;
-    final label = back ? 'Russian' : 'English';
-    final word = back ? (c.translation ?? '—') : c.headword;
-    final hint = back ? 'Tap card to flip back' : 'Tap card to reveal translation';
+    final label = back ? 'Meaning' : 'English';
+    final hint = back ? 'Tap card to flip back' : 'Tap card to reveal the meaning';
     return Container(
       constraints: const BoxConstraints(maxWidth: 340),
       decoration: BoxDecoration(
@@ -117,20 +118,41 @@ class _FlipCardState extends State<FlipCard>
               ),
             ),
             Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Text(word,
-                        textAlign: TextAlign.center,
-                        style: AppTheme.baloo(
-                            size: 36, weight: FontWeight.w700)),
-                  ),
-                  const SizedBox(height: 20),
-                  // Always speaks the English headword, even on the back face.
-                  PlayButton(word: widget.card.headword),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!back)
+                      Text(c.headword,
+                          textAlign: TextAlign.center,
+                          style: AppTheme.baloo(size: 36, weight: FontWeight.w700))
+                    else ...[
+                      // Back = the English definition (the focus), with the
+                      // native-language translation only as a small extra below.
+                      Text(c.definitionEn?.isNotEmpty == true
+                          ? c.definitionEn!
+                          : c.headword,
+                          textAlign: TextAlign.center,
+                          maxLines: 5,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTheme.baloo(
+                              size: 20, weight: FontWeight.w700, height: 1.35)),
+                      if (c.translation?.isNotEmpty ?? false) ...[
+                        const SizedBox(height: 12),
+                        Text(c.translation!,
+                            textAlign: TextAlign.center,
+                            style: AppTheme.quick(
+                                size: 14,
+                                weight: FontWeight.w600,
+                                color: AppColors.inkFaint)),
+                      ],
+                    ],
+                    const SizedBox(height: 20),
+                    // Always speaks the English headword, even on the back face.
+                    PlayButton(word: widget.card.headword),
+                  ],
+                ),
               ),
             ),
             Positioned(

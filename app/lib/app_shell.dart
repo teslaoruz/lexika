@@ -6,7 +6,6 @@ import 'features/progress/progress_screen.dart';
 import 'theme/app_colors.dart';
 import 'widgets/bottom_nav.dart';
 import 'widgets/fade_up.dart';
-import 'widgets/mode_tabs.dart';
 import 'widgets/top_bar.dart';
 
 /// App frame: top bar + sliding-pill mode tabs + screen + bottom nav, all kept
@@ -44,11 +43,7 @@ class _AppShellState extends State<AppShell> {
             child: Column(
               children: [
                 const TopBar(),
-                ModeTabs(
-                  labels: const ['Look up', 'My decks', 'Progress'],
-                  index: _index,
-                  onChanged: _select,
-                ),
+                const SizedBox(height: 4),
                 Expanded(
                   child: FadeUp(
                     key: ValueKey(_index),

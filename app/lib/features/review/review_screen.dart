@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/bounce_press.dart';
 import '../../widgets/glass_surface.dart';
+import '../../widgets/sfx.dart';
 import 'flip_card.dart';
 
 /// Fullscreen review modal over the violet gradient (prototype `.review-screen`).
@@ -72,11 +73,26 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       children: [
         _topBar(current + 1, total),
         Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            child: Center(child: FlipCard(key: ValueKey(card.headword), card: card)),
+          // Mobile gesture: swipe the card right = Good, left = Again. Buttons
+          // still cover Hard/Easy. ponytail: two directions, not a 4-way pad.
+          child: GestureDetector(
+            onHorizontalDragEnd: (d) {
+              final v = d.primaryVelocity ?? 0;
+              if (v > 250) _grade(card, 'good');
+              if (v < -250) _grade(card, 'again');
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              child: Center(child: FlipCard(key: ValueKey(card.headword), card: card)),
+            ),
           ),
         ),
+        Text('← swipe Again   ·   swipe Good →',
+            style: AppTheme.quick(
+                size: 11.5,
+                weight: FontWeight.w600,
+                color: AppColors.white.withValues(alpha: 0.6))),
+        const SizedBox(height: 6),
         _grades(card),
       ],
     );
@@ -186,14 +202,29 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   }
 
   Future<void> _grade(ReviewCard card, String grade) async {
-    // Fire-and-forget submit; ignore failures so demo mode still advances.
+    grade == 'again' ? Sfx.wrong() : Sfx.correct();
+    // Submit and award XP; ignore failures so demo mode still advances.
     final api = ref.read(apiClientProvider);
+    int xp = 0;
     if (card.wordId != 0) {
       try {
-        await api.submit(card.wordId, grade);
+        xp = await api.submit(card.wordId, grade);
+        ref.invalidate(statsProvider); // refresh streak/XP in the top bar
       } catch (_) {/* ponytail: offline demo — ignore */}
     }
     if (!mounted) return;
+    if (xp > 0) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(
+          content: Text('+$xp XP',
+              style: AppTheme.baloo(
+                  size: 15, weight: FontWeight.w700, color: AppColors.white)),
+          duration: const Duration(milliseconds: 900),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.violet,
+        ));
+    }
     setState(() => _index++);
   }
 }

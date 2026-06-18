@@ -15,8 +15,7 @@ class Demo {
         '"Smartphones have become ubiquitous in modern classrooms, changing how students take notes."',
     cefrLevel: 'B2',
     isAcademic: true,
-    translationRu: 'повсеместный',
-    translationKk: 'бәрі жерде кездесетін',
+    translations: {'ru': 'повсеместный', 'kk': 'бәрі жерде кездесетін'},
     synonyms: ['omnipresent', 'pervasive', 'widespread'],
     antonyms: ['rare', 'scarce'],
   );

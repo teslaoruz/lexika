@@ -16,9 +16,17 @@ from sqlalchemy.orm import Session
 
 from db import engine, Base, get_db
 import models
-from models import User, Word, WordFamily, Deck, DeckCard, CardProgress, ReviewLog
+from models import (
+    User, Word, WordFamily, Deck, DeckCard, CardProgress, ReviewLog, UserStats,
+)
 from lookup import get_or_fetch_word, WordNotFound
 import sm2
+import gamify
+
+# A word counts as "learned" once it survives this many SM-2 repetitions.
+# ponytail: single threshold knob; build-plan ties badges to reps>=3, learned is
+# a softer bar. Tune here.
+LEARNED_REPS = 2
 
 USER_ID = 1  # ponytail: hardcoded single user until Firebase auth lands.
 
@@ -50,12 +58,11 @@ def word_to_lookup(w: Word) -> dict:
         "phonetic": w.phonetic,
         "audio_url": w.audio_url,
         "part_of_speech": w.part_of_speech,
-        "definition_en": w.definition_en,
+        "definition_en": w.definition_en,  # primary content
         "example_en": w.example_en,
         "cefr_level": w.cefr_level,
         "is_academic": w.is_academic,
-        "translation_ru": w.translation_ru,  # null this slice
-        "translation_kk": w.translation_kk,  # null this slice
+        "translations": w.translations or {},  # extra: {lang_code: text}
         "synonyms": w.synonyms_json or [],
         "antonyms": w.antonyms_json or [],
     }
@@ -207,33 +214,45 @@ def review_due(limit: int = Query(20, ge=1, le=200), db: Session = Depends(get_d
         .order_by(CardProgress.next_review_at.asc())
         .limit(limit)
     ).all()
-    # Show the card back in the user's native language.
+    # Card content is the English definition; the native-language translation is
+    # an optional extra shown underneath (None if we don't have that language).
     user = db.get(User, USER_ID)
-    use_kk = user is not None and user.native_language == "kk"
+    lang = user.native_language if user else None
     return [
         {
             "word_id": w.id,
             "headword": w.headword,
             "phonetic": w.phonetic,
             "audio_url": w.audio_url,
-            "translation": w.translation_kk if use_kk else w.translation_ru,
-            "definition_en": w.definition_en,
+            "definition_en": w.definition_en,  # primary
+            "translation": (w.translations or {}).get(lang) if lang else None,  # extra
             "example_en": w.example_en,
         }
         for w, _ in rows
     ]
 
 
+# Games map a correct/incorrect answer onto an SM-2 grade and tag the review_log
+# row with how it was tested (build-plan 5.3). ponytail: no separate game_sessions
+# table — review_log.game_type already carries this; add game_sessions when Phase 7
+# leaderboards need per-session score rows.
+GAME_TYPES = {"flashcard", "matching", "listening", "typing", "quiz"}
+
+
 class ReviewSubmit(BaseModel):
     word_id: int
     grade: str  # again|hard|good|easy
+    game_type: str = "flashcard"
 
 
 @app.post("/review/submit")
 def review_submit(body: ReviewSubmit, db: Session = Depends(get_db)):
     if body.grade not in sm2.GRADES:
         raise HTTPException(422, f"grade must be one of {sm2.GRADES}")
-    if not db.get(Word, body.word_id):
+    if body.game_type not in GAME_TYPES:
+        raise HTTPException(422, f"game_type must be one of {GAME_TYPES}")
+    word = db.get(Word, body.word_id)
+    if not word:
         raise HTTPException(404, "word not found")
 
     prog = db.scalar(
@@ -262,13 +281,54 @@ def review_submit(body: ReviewSubmit, db: Session = Depends(get_db)):
     prog.total_correct += 1 if correct else 0
     prog.last_reviewed_at = now()
 
-    db.add(ReviewLog(user_id=USER_ID, word_id=body.word_id, game_type="flashcard", result=body.grade))
+    db.add(ReviewLog(user_id=USER_ID, word_id=body.word_id, game_type=body.game_type, result=body.grade))
+
+    # Gamification: award XP and roll the daily streak (build-plan 5.4).
+    xp = gamify.xp_for(body.grade, word.cefr_level)
+    stats = _get_or_create_stats(db)
+    today = now().date()
+    stats.current_streak = gamify.next_streak(
+        stats.current_streak, stats.last_active_date, today
+    )
+    stats.longest_streak = max(stats.longest_streak, stats.current_streak)
+    stats.total_xp += xp
+    stats.last_active_date = today
+
     db.commit()
     db.refresh(prog)
 
     return {
         "next_review_at": prog.next_review_at.isoformat(),
         "interval_days": round(prog.interval_days, 4),
+        "xp_earned": xp,
+        "total_xp": stats.total_xp,
+        "current_streak": stats.current_streak,
+    }
+
+
+def _get_or_create_stats(db: Session) -> UserStats:
+    stats = db.get(UserStats, USER_ID)
+    if not stats:
+        stats = UserStats(user_id=USER_ID)
+        db.add(stats)
+    return stats
+
+
+@app.get("/stats")
+def stats(db: Session = Depends(get_db)):
+    s = _get_or_create_stats(db)
+    words_learned = db.scalar(
+        select(func.count(CardProgress.id)).where(
+            CardProgress.user_id == USER_ID,
+            CardProgress.repetitions >= LEARNED_REPS,
+        )
+    ) or 0
+    db.commit()  # persist a freshly created stats row
+    return {
+        "current_streak": s.current_streak,
+        "longest_streak": s.longest_streak,
+        "total_xp": s.total_xp,
+        "total_words_learned": words_learned,
     }
 
 

@@ -1,31 +1,37 @@
-"""One-time: fill translation_ru/kk on already-cached `words` rows (the demo decks
-seeded before translation was wired in). Safe to re-run — only touches null rows.
-Run after seeding: `uv run python backfill_translations.py`.
+"""Fill any missing TARGET_LANGS keys in each cached word's `translations` map.
+
+Run after adding a new language to translate.py's TARGET_LANGS (e.g. "fa"), to
+populate it for words that were cached before. Safe to re-run — only fetches the
+languages a row is missing. Run: `uv run python backfill_translations.py`.
 """
-from sqlalchemy import select, or_
+from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 
 from db import SessionLocal
 from models import Word
-from translate import translate
+from translate import TARGET_LANGS, translate
 
 
 def main():
     db = SessionLocal()
     try:
-        rows = db.scalars(
-            select(Word).where(
-                or_(Word.translation_ru.is_(None), Word.translation_kk.is_(None))
-            )
-        ).all()
-        print(f"backfilling {len(rows)} word(s)...")
+        rows = db.scalars(select(Word)).all()
+        filled = 0
         for w in rows:
-            if w.translation_ru is None:
-                w.translation_ru = translate(w.headword, "ru")
-            if w.translation_kk is None:
-                w.translation_kk = translate(w.headword, "kk")
-            print(f"  {w.headword}: ru={w.translation_ru!r} kk={w.translation_kk!r}")
+            current = dict(w.translations or {})
+            missing = [c for c in TARGET_LANGS if c not in current]
+            if not missing:
+                continue
+            for code in missing:
+                t = translate(w.headword, code)
+                if t:
+                    current[code] = t
+            w.translations = current
+            flag_modified(w, "translations")  # JSON dict mutation isn't auto-tracked
+            filled += 1
+            print(f"  {w.headword}: {current}")
         db.commit()
-        print("done.")
+        print(f"done — updated {filled} word(s).")
     finally:
         db.close()
 

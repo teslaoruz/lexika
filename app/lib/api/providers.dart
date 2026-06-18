@@ -52,6 +52,18 @@ final decksProvider = FutureProvider.autoDispose<List<Deck>>((ref) async {
   }
 });
 
+/// Gamification totals (streak/XP/words). Not autoDispose — the top bar always
+/// wants it. Demo fallback keeps the prototype's 12-day streak when offline.
+final statsProvider = FutureProvider<UserStats>((ref) async {
+  final api = ref.watch(apiClientProvider);
+  try {
+    return await api.stats();
+  } on ApiException {
+    return const UserStats(
+        currentStreak: 12, longestStreak: 21, totalXp: 1840, totalWordsLearned: 87);
+  }
+});
+
 final dueCardsProvider = FutureProvider.autoDispose<List<ReviewCard>>((ref) async {
   final api = ref.watch(apiClientProvider);
   try {

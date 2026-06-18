@@ -29,8 +29,14 @@ class EntryCard extends StatefulWidget {
 }
 
 class _EntryCardState extends State<EntryCard> {
-  String _lang = 'ru'; // ru | kk
+  String? _lang; // selected extra-translation language code (null if none)
   bool _saved = false;
+
+  /// Available translation languages for this word, stable order.
+  List<String> get _langs => widget.entry.translations.keys.toList()..sort();
+
+  String get _effectiveLang =>
+      (_lang != null && _langs.contains(_lang)) ? _lang! : _langs.first;
 
   @override
   Widget build(BuildContext context) {
@@ -159,7 +165,8 @@ class _EntryCardState extends State<EntryCard> {
             ],
           ),
         ),
-        Positioned(top: 20, right: 20, child: _langToggle()),
+        if (_langs.isNotEmpty)
+          Positioned(top: 20, right: 20, child: _langToggle()),
       ],
     );
   }
@@ -173,11 +180,13 @@ class _EntryCardState extends State<EntryCard> {
                 AppTheme.baloo(size: 11, weight: FontWeight.w700, color: fg)),
       );
 
+  // Dynamic over whatever languages the word has — add "fa" etc. backend-side
+  // and a chip appears here automatically.
   Widget _langToggle() {
-    Widget btn(String key, String label) {
-      final active = _lang == key;
+    Widget btn(String code) {
+      final active = _effectiveLang == code;
       return BouncePress(
-        onTap: () => setState(() => _lang = key),
+        onTap: () => setState(() => _lang = code),
         pressedScale: 0.92,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 250),
@@ -188,7 +197,7 @@ class _EntryCardState extends State<EntryCard> {
             borderRadius: BorderRadius.circular(100),
             boxShadow: active ? AppColors.shadowViolet : const [],
           ),
-          child: Text(label,
+          child: Text(code.toUpperCase(),
               style: AppTheme.baloo(
                   size: 11.5,
                   weight: FontWeight.w700,
@@ -203,40 +212,35 @@ class _EntryCardState extends State<EntryCard> {
         color: AppColors.bgSoft,
         borderRadius: BorderRadius.circular(100),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        btn('ru', 'RU'),
-        btn('kk', 'KK'),
-      ]),
+      child: Row(mainAxisSize: MainAxisSize.min, children: _langs.map(btn).toList()),
     );
   }
 
+  /// Translation is a secondary extra — a compact muted line under the
+  /// definition, only when one exists. The English definition stays the focus.
   Widget _translationBlock(WordEntry e) {
-    final isRu = _lang == 'ru';
-    final label = isRu ? 'Russian' : 'Kazakh';
-    final word = isRu ? e.translationRu : e.translationKk;
-    // ponytail: translation_ru/kk are null in the contract slice (deferred).
-    // Show a soft placeholder rather than an empty block.
-    final shown = (word == null || word.isEmpty)
-        ? 'translation coming soon'
-        : word;
-    final faint = (word == null || word.isEmpty);
+    if (_langs.isEmpty) return const SizedBox.shrink();
+    final word = e.translations[_effectiveLang];
+    if (word == null || word.isEmpty) return const SizedBox.shrink();
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: AppColors.skyLight,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          SectionLabel('🌐 Translation · $label'),
-          Text(shown,
+          Text('🌐 ${_effectiveLang.toUpperCase()}',
               style: AppTheme.baloo(
-                  size: 21,
-                  weight: FontWeight.w700,
-                  color: faint ? AppColors.inkFaint : AppColors.ink)),
+                  size: 11, weight: FontWeight.w700, color: AppColors.inkFaint)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(word,
+                style: AppTheme.baloo(
+                    size: 15, weight: FontWeight.w700, color: AppColors.inkSoft)),
+          ),
         ],
       ),
     );

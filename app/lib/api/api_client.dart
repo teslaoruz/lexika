@@ -98,6 +98,16 @@ class ApiClient {
         .toList();
   }
 
-  Future<void> submit(int wordId, String grade) =>
-      _post(_u('/review/submit'), {'word_id': wordId, 'grade': grade});
+  /// Submits an SM-2 grade (from a flashcard or a game). Returns XP earned so
+  /// the UI can toast it.
+  Future<int> submit(int wordId, String grade, {String gameType = 'flashcard'}) async {
+    final j = await _post(_u('/review/submit'),
+        {'word_id': wordId, 'grade': grade, 'game_type': gameType});
+    return ((j as Map?)?['xp_earned'] ?? 0) as int;
+  }
+
+  Future<UserStats> stats() async {
+    final j = await _get(_u('/stats'));
+    return UserStats.fromJson(j as Map<String, dynamic>);
+  }
 }

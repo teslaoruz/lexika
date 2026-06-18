@@ -11,8 +11,8 @@ class WordEntry {
   final String? exampleEn;
   final String? cefrLevel;
   final bool isAcademic;
-  final String? translationRu;
-  final String? translationKk;
+  /// Extra (not the focus): {lang_code: text}. Empty when none available.
+  final Map<String, String> translations;
   final List<String> synonyms;
   final List<String> antonyms;
 
@@ -26,8 +26,7 @@ class WordEntry {
     this.exampleEn,
     this.cefrLevel,
     this.isAcademic = false,
-    this.translationRu,
-    this.translationKk,
+    this.translations = const {},
     this.synonyms = const [],
     this.antonyms = const [],
   });
@@ -42,8 +41,7 @@ class WordEntry {
         exampleEn: j['example_en'] as String?,
         cefrLevel: j['cefr_level'] as String?,
         isAcademic: (j['is_academic'] ?? false) as bool,
-        translationRu: j['translation_ru'] as String?,
-        translationKk: j['translation_kk'] as String?,
+        translations: _strMap(j['translations']),
         synonyms: _strList(j['synonyms']),
         antonyms: _strList(j['antonyms']),
       );
@@ -158,5 +156,30 @@ class ReviewCard {
       );
 }
 
+class UserStats {
+  final int currentStreak;
+  final int longestStreak;
+  final int totalXp;
+  final int totalWordsLearned;
+
+  const UserStats({
+    this.currentStreak = 0,
+    this.longestStreak = 0,
+    this.totalXp = 0,
+    this.totalWordsLearned = 0,
+  });
+
+  factory UserStats.fromJson(Map<String, dynamic> j) => UserStats(
+        currentStreak: (j['current_streak'] ?? 0) as int,
+        longestStreak: (j['longest_streak'] ?? 0) as int,
+        totalXp: (j['total_xp'] ?? 0) as int,
+        totalWordsLearned: (j['total_words_learned'] ?? 0) as int,
+      );
+}
+
 List<String> _strList(dynamic v) =>
     (v as List?)?.map((e) => e.toString()).toList() ?? const [];
+
+Map<String, String> _strMap(dynamic v) =>
+    (v as Map?)?.map((k, val) => MapEntry(k.toString(), val.toString())) ??
+    const {};

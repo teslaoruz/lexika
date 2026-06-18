@@ -1,15 +1,15 @@
 """SQLAlchemy models for the MVP slice (build-plan section 4).
 Tables: users, words, word_family, word_metadata, decks, deck_cards,
-card_progress, review_log. game_sessions/user_stats skipped — ponytail,
-no games yet; add when Phase 3/4 land.
+card_progress, review_log, user_stats. game_sessions skipped — ponytail,
+no game suite yet; add when Phase 4 lands.
 
 ponytail: synonyms/antonyms stored as JSON columns on `words` instead of a
 join table — they come as a list straight from the Dictionary API and we only
 ever read them whole. Normalize if we ever need to query by synonym.
 """
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from sqlalchemy import (
-    Integer, String, Text, Boolean, Float, DateTime, ForeignKey, JSON
+    Integer, String, Text, Boolean, Float, DateTime, Date, ForeignKey, JSON
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from db import Base
@@ -51,8 +51,9 @@ class Word(Base):
     example_en: Mapped[str | None] = mapped_column(Text, nullable=True)
     cefr_level: Mapped[str | None] = mapped_column(String, nullable=True)
     is_academic: Mapped[bool] = mapped_column(Boolean, default=False)
-    translation_ru: Mapped[str | None] = mapped_column(String, nullable=True)
-    translation_kk: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Extra (not primary): {lang_code: text}, e.g. {"ru": "...", "kk": "..."}.
+    # JSON map so a new language is a key, never a migration. See translate.py.
+    translations: Mapped[dict] = mapped_column(JSON, default=dict)
     synonyms_json: Mapped[list] = mapped_column(JSON, default=list)
     antonyms_json: Mapped[list] = mapped_column(JSON, default=list)
     source: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -103,6 +104,18 @@ class CardProgress(Base):
     total_correct: Mapped[int] = mapped_column(Integer, default=0)
     total_attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UserStats(Base):
+    """Per-user gamification totals (build-plan 5.4). ponytail: total_words_learned
+    is computed on read from card_progress, not stored — a COUNT is free at this
+    scale and can't drift. Only the event-accumulated values live here."""
+    __tablename__ = "user_stats"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    current_streak: Mapped[int] = mapped_column(Integer, default=0)
+    longest_streak: Mapped[int] = mapped_column(Integer, default=0)
+    total_xp: Mapped[int] = mapped_column(Integer, default=0)
+    last_active_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class ReviewLog(Base):
