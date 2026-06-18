@@ -21,10 +21,13 @@ import main  # noqa: E402  (must follow the engine swap)
 from models import User, Word, WordMetadata, CardProgress  # noqa: E402
 
 
+AUTH = {"Authorization": "Bearer test-token-1"}  # matches the seeded user below
+
+
 def setup():
     Base.metadata.create_all(engine)
     s = TestSession()
-    s.add(User(id=1, native_language="ru", current_level="B1"))
+    s.add(User(id=1, native_language="ru", current_level="B1", token="test-token-1"))
     # easy=hard word (low ease), normal word, a learned word, and unseen words
     s.add_all([
         Word(id=1, headword="aberration", definition_en="a departure", cefr_level="C1"),
@@ -47,11 +50,11 @@ def main_test():
     setup()
     c = TestClient(main.app)
 
-    weak = c.get("/words/weak").json()
+    weak = c.get("/words/weak", headers=AUTH).json()
     assert [w["headword"] for w in weak] == ["aberration"], weak  # only the <2.5-ease, attempted word
     assert weak[0]["accuracy"] == 0.25, weak
 
-    sugg = c.get("/words/suggested").json()
+    sugg = c.get("/words/suggested", headers=AUTH).json()
     heads = [w["headword"] for w in sugg]
     assert "cat" not in heads and "aberration" not in heads, heads  # seen words excluded
     assert heads[0] == "ubiquitous", heads  # B1 (my level) + academic ranks above A1 apple

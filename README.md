@@ -32,7 +32,7 @@ tracking — the SM-2 scheduler already maintains the signal.
 docker compose up -d
 
 # 2. Backend  (first run: seed the DB)
-cd backend && uv sync && uv run python seed.py && uv run uvicorn main:app --port 8000
+cd backend && uv sync && uv run python seed.py && uv run python -m uvicorn main:app --port 8000
 
 # 3. Flutter web client
 cd app && flutter run -d chrome
@@ -45,7 +45,25 @@ JSON map on each word and filled free (deep-translator) on lookup. Add a languag
 e.g. Persian — by appending its ISO code (`"fa"`) to `backend/translate.py`
 `TARGET_LANGS`; no schema change, then run `backfill_translations.py` for old rows.
 
+## Auth (email + password)
+Sign-in/register gate in front of the app. `/auth/register` + `/auth/login`
+issue a bearer token (stdlib pbkdf2 hash + opaque token on the user row, no JWT
+lib, no new deps); the Flutter client attaches it to every user-scoped request,
+and every endpoint now reads the real user instead of a hardcoded id. Seeded
+demo login: `demo@lexika.app` / `demo1234`. Firebase is a drop-in later — swap
+`backend/auth.py:current_user` to verify a Firebase ID token; nothing else
+changes. ponytail: session is in-memory on the client (re-login on restart) —
+add `shared_preferences` to persist it.
+
+## Phase 7 — cohorts + leaderboard
+Students join a class with a short code (or create one as the teacher); the
+Progress screen shows a weekly XP leaderboard scoped to that class. ponytail:
+one class per student (`users.cohort_id`), and weekly XP is recomputed from
+`review_log` over the window (no stored per-period XP, no `game_sessions` table).
+See `/cohorts`, `/cohorts/join`, `/cohort`, `/leaderboard` in CONTRACT.md.
+
 ## Deferred on purpose (ponytail — add when the core loop is proven)
-Firebase auth (single seeded user_id=1 for now) · leaderboards/cohorts ·
+Firebase / Google·Apple social login (email+password covers multi-user now) ·
+client session persistence · multi-class membership (one class per student now) ·
 `game_sessions` table (review_log covers per-answer tracking for now) · progress
 charts (accuracy by level) · Redis · Alembic.

@@ -210,6 +210,49 @@ class WordTip {
       );
 }
 
+/// Phase 7: a class group and one leaderboard row.
+class Cohort {
+  final int id;
+  final String name;
+  final String joinCode;
+  final int memberCount;
+
+  const Cohort({
+    required this.id,
+    required this.name,
+    required this.joinCode,
+    this.memberCount = 0,
+  });
+
+  factory Cohort.fromJson(Map<String, dynamic> j) => Cohort(
+        id: (j['id'] ?? 0) as int,
+        name: (j['name'] ?? '') as String,
+        joinCode: (j['join_code'] ?? '') as String,
+        memberCount: (j['member_count'] ?? 0) as int,
+      );
+}
+
+class LeaderboardEntry {
+  final int rank;
+  final String displayName;
+  final int weeklyXp;
+  final bool isMe;
+
+  const LeaderboardEntry({
+    required this.rank,
+    required this.displayName,
+    required this.weeklyXp,
+    this.isMe = false,
+  });
+
+  factory LeaderboardEntry.fromJson(Map<String, dynamic> j) => LeaderboardEntry(
+        rank: (j['rank'] ?? 0) as int,
+        displayName: (j['display_name'] ?? '') as String,
+        weeklyXp: (j['weekly_xp'] ?? 0) as int,
+        isMe: (j['is_me'] ?? false) as bool,
+      );
+}
+
 List<String> _strList(dynamic v) =>
     (v as List?)?.map((e) => e.toString()).toList() ?? const [];
 

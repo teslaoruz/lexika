@@ -1,0 +1,250 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../api/api_client.dart';
+import '../../api/models.dart';
+import '../../api/providers.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/app_button.dart';
+import '../../widgets/app_card.dart';
+import '../../widgets/section_label.dart';
+
+/// Phase 7 "Class" module on the Progress screen: join/create a class, then the
+/// weekly leaderboard scoped to its members. ponytail: one widget, no new nav
+/// tab — folded into the existing dashboard.
+class ClassModule extends ConsumerStatefulWidget {
+  const ClassModule({super.key});
+
+  @override
+  ConsumerState<ClassModule> createState() => _ClassModuleState();
+}
+
+class _ClassModuleState extends ConsumerState<ClassModule> {
+  final _code = TextEditingController();
+  final _name = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _act(Future<Cohort> Function(ApiClient) call) async {
+    setState(() => _busy = true);
+    try {
+      await call(ref.read(apiClientProvider));
+      ref.invalidate(cohortProvider);
+      ref.invalidate(leaderboardProvider);
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cohort = ref.watch(cohortProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionLabel('Your class'),
+        const SizedBox(height: 10),
+        cohort.when(
+          loading: () => const AppCard(
+            child: Center(
+                child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(color: AppColors.violet),
+            )),
+          ),
+          error: (_, _) => const AppCard(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Could not load your class'),
+            ),
+          ),
+          data: (c) => c == null ? _joinOrCreate() : _joined(c),
+        ),
+      ],
+    );
+  }
+
+  Widget _joinOrCreate() => AppCard(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Join your class with a code',
+                style: AppTheme.quick(
+                    size: 13.5, weight: FontWeight.w600, color: AppColors.inkSoft)),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: _field(_code, 'CODE', caps: true)),
+              const SizedBox(width: 10),
+              AppButton(
+                label: 'Join',
+                expand: false,
+                onTap: _busy
+                    ? null
+                    : () => _act((api) => api.joinCohort(_code.text.trim())),
+              ),
+            ]),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Divider(height: 1),
+            ),
+            Text('…or create one (you’re the teacher)',
+                style: AppTheme.quick(
+                    size: 13.5, weight: FontWeight.w600, color: AppColors.inkSoft)),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: _field(_name, 'Class name')),
+              const SizedBox(width: 10),
+              AppButton(
+                label: 'Create',
+                expand: false,
+                bg: AppColors.violet,
+                shadow: AppColors.shadowViolet,
+                onTap: _busy
+                    ? null
+                    : () => _act((api) => api.createCohort(_name.text.trim())),
+              ),
+            ]),
+          ],
+        ),
+      );
+
+  Widget _joined(Cohort c) {
+    final lb = ref.watch(leaderboardProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppCard(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(c.name,
+                        style: AppTheme.baloo(
+                            size: 18, weight: FontWeight.w700)),
+                    Text('${c.memberCount} member${c.memberCount == 1 ? '' : 's'}',
+                        style: AppTheme.quick(
+                            size: 12.5, color: AppColors.inkSoft)),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('CODE',
+                      style: AppTheme.quick(
+                          size: 10,
+                          weight: FontWeight.w700,
+                          color: AppColors.inkFaint)),
+                  SelectableText(c.joinCode,
+                      style: AppTheme.baloo(
+                          size: 18,
+                          weight: FontWeight.w800,
+                          color: AppColors.violet,
+                          letterSpacing: 1.5)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text('This week',
+            style: AppTheme.quick(
+                size: 12.5, weight: FontWeight.w700, color: AppColors.inkSoft)),
+        const SizedBox(height: 8),
+        lb.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(
+                child: CircularProgressIndicator(color: AppColors.violet)),
+          ),
+          error: (_, _) => const Text('Could not load the leaderboard'),
+          data: (rows) => rows.isEmpty
+              ? Text('No XP earned this week yet — go review some words!',
+                  style: AppTheme.quick(
+                      size: 13, color: AppColors.inkFaint, height: 1.4))
+              : Column(
+                  children: [
+                    for (final e in rows) ...[
+                      _row(e),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _row(LeaderboardEntry e) {
+    final medal = switch (e.rank) { 1 => '🥇', 2 => '🥈', 3 => '🥉', _ => null };
+    return AppCard(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      color: e.isMe ? AppColors.violetLight : AppColors.white,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            child: medal != null
+                ? Text(medal, style: const TextStyle(fontSize: 18))
+                : Text('${e.rank}',
+                    style: AppTheme.baloo(
+                        size: 15,
+                        weight: FontWeight.w700,
+                        color: AppColors.inkFaint)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(e.isMe ? '${e.displayName} (you)' : e.displayName,
+                overflow: TextOverflow.ellipsis,
+                style: AppTheme.baloo(
+                    size: 15,
+                    weight: FontWeight.w700,
+                    color: e.isMe ? AppColors.violetDark : AppColors.ink)),
+          ),
+          Text('${e.weeklyXp} XP',
+              style: AppTheme.quick(
+                  size: 13.5,
+                  weight: FontWeight.w700,
+                  color: AppColors.violet)),
+        ],
+      ),
+    );
+  }
+
+  Widget _field(TextEditingController c, String hint, {bool caps = false}) =>
+      TextField(
+        controller: c,
+        textCapitalization:
+            caps ? TextCapitalization.characters : TextCapitalization.sentences,
+        autocorrect: false,
+        style: AppTheme.quick(size: 15),
+        decoration: InputDecoration(
+          hintText: hint,
+          filled: true,
+          fillColor: AppColors.bgSoft,
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      );
+}

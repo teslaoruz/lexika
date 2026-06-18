@@ -1,10 +1,25 @@
-# Lexika API Contract (MVP slice — Phase 0+1+2+3)
+# Lexika API Contract (MVP slice — Phase 0+1+2+3 + auth)
 
-Backend base URL: `http://localhost:8000`. All JSON. No auth in this slice —
-every request acts as the seeded `user_id = 1`. (ponytail: Firebase auth deferred,
-single-user until the core loop is proven. Add when more than the test user exists.)
+Backend base URL: `http://localhost:8000`. All JSON.
+
+**Auth:** email + password. `POST /auth/register` or `/auth/login` returns a
+bearer `token`; send it as `Authorization: Bearer <token>` on every user-scoped
+request (decks, review, stats, weak, suggested). `/words/lookup` and
+`/words/{w}/relations` are open (shared dictionary cache, not per-user).
+ponytail: backend-issued opaque token (no JWT lib), one session per user; the
+Firebase drop-in point is `auth.current_user` — swap the DB token lookup for
+Firebase ID-token verification and no endpoint changes. Seeded demo login:
+`demo@lexika.app` / `demo1234` (owns the seeded decks/progress).
 
 CORS: allow all origins (dev only).
+
+## Auth
+
+### POST /auth/register  body `{"email","password","native_language"?,"display_name"?}`
+409 if email taken, 422 if email/password blank. → `{"token","user":{id,email,display_name,native_language,current_level}}`
+### POST /auth/login  body `{"email","password"}`
+401 on bad credentials. Rotates the token. → same shape as register.
+### GET /auth/me  → the current user object (requires bearer token).
 
 ## Words
 
@@ -112,6 +127,24 @@ Attempted words with SM-2 `ease_factor < 2.5`, hardest (lowest ease) first.
 ```
 Cached words the user hasn't started, ordered: at the user's `current_level`
 first, then academic words, then most frequent (`word_metadata.frequency_rank`).
+
+## Cohorts + Leaderboard (Phase 7)
+
+One class per student (`users.cohort_id`); join by a short code. All require auth.
+
+### POST /cohorts  body `{"name":"..."}`  → 201, creator auto-joins
+### POST /cohorts/join  body `{"code":"AB3KПР"}`  → joins; 404 if no such code
+Both return `{"id","name","join_code","member_count"}`.
+### GET /cohort  → `{"cohort": {...} | null}`  (null = not in a class)
+### GET /leaderboard?days=7  → weekly XP ranking scoped to my cohort
+```json
+{"cohort": {"id":1,"name":"Class A","join_code":"AB3KPR","member_count":2},
+ "entries": [{"rank":1,"user_id":1,"display_name":"alice","weekly_xp":18,"is_me":true}]}
+```
+`cohort` is null + `entries` empty if the user hasn't joined a class. ponytail:
+weekly XP is recomputed from `review_log` (grade + word CEFR via `gamify.xp_for`)
+over the window — no stored per-period XP, no `game_sessions` table; aggregated
+in Python (fine at ~100 users, push to a SQL CASE-sum if it grows).
 
 ## Seed (runs once on `make seed` / startup)
 - Load CEFR-J wordlist CSV + AWL list into `word_metadata(word, cefr_level, is_academic, frequency_rank)`.

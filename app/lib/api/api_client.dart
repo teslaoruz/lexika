@@ -31,6 +31,19 @@ class ApiClient {
   final http.Client _client;
   static const _timeout = Duration(seconds: 6);
 
+  /// Bearer token set by the auth controller after login/register; attached to
+  /// every request. ponytail: in-memory only (re-login on app restart) — add
+  /// shared_preferences to persist the session across launches.
+  String? token;
+
+  Map<String, String> _headers([bool json = false]) {
+    final auth = token == null ? null : 'Bearer $token';
+    return {
+      if (json) 'Content-Type': 'application/json',
+      'Authorization': ?auth, // null-aware: omitted when not signed in
+    };
+  }
+
   Uri _u(String path, [Map<String, dynamic>? q]) =>
       Uri.parse('$baseUrl$path').replace(
         queryParameters: q?.map((k, v) => MapEntry(k, '$v')),
@@ -38,7 +51,7 @@ class ApiClient {
 
   Future<dynamic> _get(Uri url) async {
     try {
-      final res = await _client.get(url).timeout(_timeout);
+      final res = await _client.get(url, headers: _headers()).timeout(_timeout);
       if (res.statusCode == 404) {
         throw ApiException('Not found', status: 404);
       }
@@ -56,12 +69,15 @@ class ApiClient {
   Future<dynamic> _post(Uri url, Map<String, dynamic> body) async {
     try {
       final res = await _client
-          .post(url,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode(body))
+          .post(url, headers: _headers(true), body: jsonEncode(body))
           .timeout(_timeout);
       if (res.statusCode >= 400) {
-        throw ApiException('Server error', status: res.statusCode);
+        // Surface the server's detail (e.g. wrong password) when present.
+        String msg = 'Server error';
+        try {
+          msg = (jsonDecode(res.body) as Map)['detail']?.toString() ?? msg;
+        } catch (_) {}
+        throw ApiException(msg, status: res.statusCode);
       }
       return res.body.isEmpty ? null : jsonDecode(res.body);
     } on ApiException {
@@ -70,6 +86,28 @@ class ApiClient {
       throw ApiException("Couldn't reach server: $e");
     }
   }
+
+  /// Auth (CONTRACT.md /auth). Both return the raw `{token, user}` map; the auth
+  /// controller stores the token on this client.
+  Future<Map<String, dynamic>> register(String email, String password,
+          {String nativeLanguage = 'ru', String? displayName}) async =>
+      (await _post(_u('/auth/register'), {
+        'email': email,
+        'password': password,
+        'native_language': nativeLanguage,
+        'display_name': ?displayName,
+      }) as Map)
+          .cast<String, dynamic>();
+
+  /// Validates the current token and returns the user (used to restore a saved
+  /// session on launch). Throws [ApiException] (401) if the token is stale.
+  Future<Map<String, dynamic>> me() async =>
+      (await _get(_u('/auth/me')) as Map).cast<String, dynamic>();
+
+  Future<Map<String, dynamic>> login(String email, String password) async =>
+      (await _post(_u('/auth/login'), {'email': email, 'password': password})
+              as Map)
+          .cast<String, dynamic>();
 
   Future<WordEntry> lookup(String word) async {
     final j = await _get(_u('/words/lookup', {'word': word}));
@@ -122,6 +160,29 @@ class ApiClient {
     final j = await _get(_u('/words/suggested', {'limit': limit}));
     return (j as List)
         .map((e) => WordTip.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  // ---- Phase 7: cohorts + leaderboard ----
+  Future<Cohort?> myCohort() async {
+    final j = await _get(_u('/cohort')) as Map<String, dynamic>;
+    return j['cohort'] == null
+        ? null
+        : Cohort.fromJson(j['cohort'] as Map<String, dynamic>);
+  }
+
+  Future<Cohort> createCohort(String name) async =>
+      Cohort.fromJson(await _post(_u('/cohorts'), {'name': name})
+          as Map<String, dynamic>);
+
+  Future<Cohort> joinCohort(String code) async =>
+      Cohort.fromJson(await _post(_u('/cohorts/join'), {'code': code})
+          as Map<String, dynamic>);
+
+  Future<List<LeaderboardEntry>> leaderboard() async {
+    final j = await _get(_u('/leaderboard')) as Map<String, dynamic>;
+    return ((j['entries'] as List?) ?? [])
+        .map((e) => LeaderboardEntry.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 }

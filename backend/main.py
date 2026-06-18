@@ -5,8 +5,11 @@ Tables are created with create_all on startup.
 ponytail: create_all instead of Alembic for this single-dev MVP. Alembic is the
 upgrade path once the schema needs to change against real data.
 """
+import secrets
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,8 +21,10 @@ from db import engine, Base, get_db
 import models
 from models import (
     User, Word, WordFamily, Deck, DeckCard, CardProgress, ReviewLog, UserStats,
+    Cohort,
 )
 from lookup import get_or_fetch_word, WordNotFound
+from auth import current_user, hash_password, verify_password, new_token
 import sm2
 import gamify
 
@@ -27,8 +32,6 @@ import gamify
 # ponytail: single threshold knob; build-plan ties badges to reps>=3, learned is
 # a softer bar. Tune here.
 LEARNED_REPS = 2
-
-USER_ID = 1  # ponytail: hardcoded single user until Firebase auth lands.
 
 
 @asynccontextmanager
@@ -48,6 +51,91 @@ app.add_middleware(
 
 def now():
     return datetime.now(timezone.utc)
+
+
+# --------------------------------------------------------------------- /auth
+def _user_out(u: User) -> dict:
+    return {
+        "id": u.id,
+        "email": u.email,
+        "display_name": u.display_name,
+        "native_language": u.native_language,
+        "current_level": u.current_level,
+    }
+
+
+MIN_PASSWORD_LEN = 8
+
+# ponytail: in-memory login throttle — per-process, resets on restart. Good
+# enough for ~100 users on one worker; move to Redis if you run several. Keyed
+# by email; a determined attacker can lock a known victim's email for the window
+# (accepted at this scale — switch to IP+email keying if it matters).
+_FAIL_MAX, _FAIL_WINDOW = 5, 300  # 5 failures per 5 minutes
+_login_fails: dict[str, list[float]] = defaultdict(list)
+
+
+def _throttle_check(email: str):
+    cutoff = time.time() - _FAIL_WINDOW
+    recent = [t for t in _login_fails[email] if t > cutoff]
+    _login_fails[email] = recent
+    if len(recent) >= _FAIL_MAX:
+        raise HTTPException(429, "too many attempts — try again in a few minutes")
+
+
+class Register(BaseModel):
+    email: str
+    password: str
+    display_name: str | None = None
+    native_language: str = "ru"
+    current_level: str | None = None
+
+
+@app.post("/auth/register")
+def register(body: Register, db: Session = Depends(get_db)):
+    email = body.email.strip().lower()
+    if not email or not body.password:
+        raise HTTPException(422, "email and password required")
+    if len(body.password) < MIN_PASSWORD_LEN:
+        raise HTTPException(422, f"password must be at least {MIN_PASSWORD_LEN} characters")
+    if db.scalar(select(User).where(User.email == email)):
+        raise HTTPException(409, "email already registered")
+    u = User(
+        email=email,
+        password_hash=hash_password(body.password),
+        display_name=body.display_name,
+        native_language=body.native_language,
+        current_level=body.current_level,
+        auth_provider="password",
+        token=new_token(),
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return {"token": u.token, "user": _user_out(u)}
+
+
+class Login(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/auth/login")
+def login(body: Login, db: Session = Depends(get_db)):
+    email = body.email.strip().lower()
+    _throttle_check(email)
+    u = db.scalar(select(User).where(User.email == email))
+    if not u or not u.password_hash or not verify_password(body.password, u.password_hash):
+        _login_fails[email].append(time.time())
+        raise HTTPException(401, "wrong email or password")  # generic: no enumeration
+    _login_fails.pop(email, None)  # clear on success
+    u.token = new_token()  # rotate the token on each login
+    db.commit()
+    return {"token": u.token, "user": _user_out(u)}
+
+
+@app.get("/auth/me")
+def me(user: User = Depends(current_user)):
+    return _user_out(user)
 
 
 # ---------------------------------------------------------------- serializers
@@ -131,9 +219,9 @@ def relations(word: str, db: Session = Depends(get_db)):
 
 # -------------------------------------------------------------------- /decks
 @app.get("/decks")
-def list_decks(db: Session = Depends(get_db)):
+def list_decks(user: User = Depends(current_user), db: Session = Depends(get_db)):
     decks = db.scalars(
-        select(Deck).where((Deck.user_id == USER_ID) | (Deck.user_id.is_(None)))
+        select(Deck).where((Deck.user_id == user.id) | (Deck.user_id.is_(None)))
     ).all()
     out = []
     for d in decks:
@@ -144,7 +232,7 @@ def list_decks(db: Session = Depends(get_db)):
         due_count = db.scalar(
             select(func.count(DeckCard.id))
             .join(CardProgress, (CardProgress.word_id == DeckCard.word_id)
-                  & (CardProgress.user_id == USER_ID), isouter=True)
+                  & (CardProgress.user_id == user.id), isouter=True)
             .where(DeckCard.deck_id == d.id)
             .where((CardProgress.id.is_(None)) | (CardProgress.next_review_at <= now()))
         )
@@ -164,8 +252,8 @@ class DeckCreate(BaseModel):
 
 
 @app.post("/decks")
-def create_deck(body: DeckCreate, db: Session = Depends(get_db)):
-    d = Deck(user_id=USER_ID, name=body.name, cefr_level=body.cefr_level)
+def create_deck(body: DeckCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    d = Deck(user_id=user.id, name=body.name, cefr_level=body.cefr_level)
     db.add(d)
     db.commit()
     db.refresh(d)
@@ -180,8 +268,11 @@ class CardAdd(BaseModel):
 
 
 @app.post("/decks/{deck_id}/cards", status_code=201)
-def add_card(deck_id: int, body: CardAdd, db: Session = Depends(get_db)):
-    if not db.get(Deck, deck_id):
+def add_card(deck_id: int, body: CardAdd, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    deck = db.get(Deck, deck_id)
+    # Must be the caller's own deck. 404 (not 403) so we don't leak that a deck
+    # id exists for someone else. ponytail: ownership check, no ACL system.
+    if not deck or deck.user_id != user.id:
         raise HTTPException(404, "deck not found")
     if not db.get(Word, body.word_id):
         raise HTTPException(404, "word not found")
@@ -194,30 +285,29 @@ def add_card(deck_id: int, body: CardAdd, db: Session = Depends(get_db)):
         # ensure a card_progress row exists so the word shows up in /review/due
         prog = db.scalar(
             select(CardProgress).where(
-                CardProgress.user_id == USER_ID, CardProgress.word_id == body.word_id
+                CardProgress.user_id == user.id, CardProgress.word_id == body.word_id
             )
         )
         if not prog:
-            db.add(CardProgress(user_id=USER_ID, word_id=body.word_id, next_review_at=now()))
+            db.add(CardProgress(user_id=user.id, word_id=body.word_id, next_review_at=now()))
         db.commit()
     return {"ok": True}
 
 
 # ------------------------------------------------------------------- /review
 @app.get("/review/due")
-def review_due(limit: int = Query(20, ge=1, le=200), db: Session = Depends(get_db)):
+def review_due(limit: int = Query(20, ge=1, le=200), user: User = Depends(current_user), db: Session = Depends(get_db)):
     rows = db.execute(
         select(Word, CardProgress)
         .join(CardProgress, CardProgress.word_id == Word.id)
-        .where(CardProgress.user_id == USER_ID)
+        .where(CardProgress.user_id == user.id)
         .where(CardProgress.next_review_at <= now())
         .order_by(CardProgress.next_review_at.asc())
         .limit(limit)
     ).all()
     # Card content is the English definition; the native-language translation is
     # an optional extra shown underneath (None if we don't have that language).
-    user = db.get(User, USER_ID)
-    lang = user.native_language if user else None
+    lang = user.native_language
     return [
         {
             "word_id": w.id,
@@ -233,21 +323,20 @@ def review_due(limit: int = Query(20, ge=1, le=200), db: Session = Depends(get_d
 
 
 @app.get("/words/weak")
-def weak_words(limit: int = Query(10, ge=1, le=100), db: Session = Depends(get_db)):
+def weak_words(limit: int = Query(10, ge=1, le=100), user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Words the user keeps struggling with. ponytail: ranked by SM-2 ease_factor
     (lower = harder), which the scheduler already maintains — no extra tracking.
     Only words actually attempted; default ease 2.5 means 'not yet hard'."""
     rows = db.execute(
         select(Word, CardProgress)
         .join(CardProgress, CardProgress.word_id == Word.id)
-        .where(CardProgress.user_id == USER_ID)
+        .where(CardProgress.user_id == user.id)
         .where(CardProgress.total_attempts > 0)
         .where(CardProgress.ease_factor < 2.5)
         .order_by(CardProgress.ease_factor.asc())
         .limit(limit)
     ).all()
-    user = db.get(User, USER_ID)
-    lang = user.native_language if user else None
+    lang = user.native_language
     return [
         {
             "word_id": w.id,
@@ -263,13 +352,12 @@ def weak_words(limit: int = Query(10, ge=1, le=100), db: Session = Depends(get_d
 
 
 @app.get("/words/suggested")
-def suggested_words(limit: int = Query(10, ge=1, le=100), db: Session = Depends(get_db)):
+def suggested_words(limit: int = Query(10, ge=1, le=100), user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Words to learn next: cached words the user hasn't started, at their level,
     academic words first, then most-frequent. ponytail: ranks over already-cached
     words (build-plan 5.1) — no new content pipeline."""
-    user = db.get(User, USER_ID)
-    level = user.current_level if user else None
-    seen = select(CardProgress.word_id).where(CardProgress.user_id == USER_ID)
+    level = user.current_level
+    seen = select(CardProgress.word_id).where(CardProgress.user_id == user.id)
     rows = db.execute(
         select(Word, models.WordMetadata)
         .outerjoin(models.WordMetadata, models.WordMetadata.word == Word.headword)
@@ -282,7 +370,7 @@ def suggested_words(limit: int = Query(10, ge=1, le=100), db: Session = Depends(
         )
         .limit(limit)
     ).all()
-    lang = user.native_language if user else None
+    lang = user.native_language
     return [
         {
             "word_id": w.id,
@@ -310,7 +398,7 @@ class ReviewSubmit(BaseModel):
 
 
 @app.post("/review/submit")
-def review_submit(body: ReviewSubmit, db: Session = Depends(get_db)):
+def review_submit(body: ReviewSubmit, user: User = Depends(current_user), db: Session = Depends(get_db)):
     if body.grade not in sm2.GRADES:
         raise HTTPException(422, f"grade must be one of {sm2.GRADES}")
     if body.game_type not in GAME_TYPES:
@@ -321,12 +409,13 @@ def review_submit(body: ReviewSubmit, db: Session = Depends(get_db)):
 
     prog = db.scalar(
         select(CardProgress).where(
-            CardProgress.user_id == USER_ID, CardProgress.word_id == body.word_id
+            CardProgress.user_id == user.id, CardProgress.word_id == body.word_id
         )
     )
     if not prog:
-        prog = CardProgress(user_id=USER_ID, word_id=body.word_id)
+        prog = CardProgress(user_id=user.id, word_id=body.word_id)
         db.add(prog)
+        db.flush()  # populate column defaults (ease 2.5 etc.) before we read them
 
     new = sm2.schedule(
         sm2.SM2State(prog.ease_factor, prog.interval_days, prog.repetitions), body.grade
@@ -345,11 +434,11 @@ def review_submit(body: ReviewSubmit, db: Session = Depends(get_db)):
     prog.total_correct += 1 if correct else 0
     prog.last_reviewed_at = now()
 
-    db.add(ReviewLog(user_id=USER_ID, word_id=body.word_id, game_type=body.game_type, result=body.grade))
+    db.add(ReviewLog(user_id=user.id, word_id=body.word_id, game_type=body.game_type, result=body.grade))
 
     # Gamification: award XP and roll the daily streak (build-plan 5.4).
     xp = gamify.xp_for(body.grade, word.cefr_level)
-    stats = _get_or_create_stats(db)
+    stats = _get_or_create_stats(db, user.id)
     today = now().date()
     stats.current_streak = gamify.next_streak(
         stats.current_streak, stats.last_active_date, today
@@ -370,20 +459,21 @@ def review_submit(body: ReviewSubmit, db: Session = Depends(get_db)):
     }
 
 
-def _get_or_create_stats(db: Session) -> UserStats:
-    stats = db.get(UserStats, USER_ID)
+def _get_or_create_stats(db: Session, user_id: int) -> UserStats:
+    stats = db.get(UserStats, user_id)
     if not stats:
-        stats = UserStats(user_id=USER_ID)
+        stats = UserStats(user_id=user_id)
         db.add(stats)
+        db.flush()  # populate column defaults (streak/xp = 0) before we read them
     return stats
 
 
 @app.get("/stats")
-def stats(db: Session = Depends(get_db)):
-    s = _get_or_create_stats(db)
+def stats(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    s = _get_or_create_stats(db, user.id)
     words_learned = db.scalar(
         select(func.count(CardProgress.id)).where(
-            CardProgress.user_id == USER_ID,
+            CardProgress.user_id == user.id,
             CardProgress.repetitions >= LEARNED_REPS,
         )
     ) or 0
@@ -396,6 +486,101 @@ def stats(db: Session = Depends(get_db)):
     }
 
 
+# ---------------------------------------------------- /cohorts + /leaderboard
+# ponytail: one cohort per student (cohort_id on the user), join by short code.
+# A join table would let a student be in several classes — add it then.
+_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no I/O/0/1 ambiguity
+
+
+def _new_join_code(db: Session) -> str:
+    for _ in range(10):
+        code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
+        if not db.scalar(select(Cohort).where(Cohort.join_code == code)):
+            return code
+    raise HTTPException(500, "could not allocate a join code")  # ~never at this scale
+
+
+def _cohort_out(c: Cohort, member_count: int) -> dict:
+    return {"id": c.id, "name": c.name, "join_code": c.join_code, "member_count": member_count}
+
+
+def _member_count(db: Session, cohort_id: int) -> int:
+    return db.scalar(select(func.count(User.id)).where(User.cohort_id == cohort_id)) or 0
+
+
+class CohortCreate(BaseModel):
+    name: str
+
+
+@app.post("/cohorts", status_code=201)
+def create_cohort(body: CohortCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(422, "name required")
+    c = Cohort(name=name, join_code=_new_join_code(db), created_by=user.id)
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    user.cohort_id = c.id  # creator joins their own class
+    db.commit()
+    return _cohort_out(c, _member_count(db, c.id))
+
+
+class CohortJoin(BaseModel):
+    code: str
+
+
+@app.post("/cohorts/join")
+def join_cohort(body: CohortJoin, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    c = db.scalar(select(Cohort).where(Cohort.join_code == body.code.strip().upper()))
+    if not c:
+        raise HTTPException(404, "no class with that code")
+    user.cohort_id = c.id
+    db.commit()
+    return _cohort_out(c, _member_count(db, c.id))
+
+
+@app.get("/cohort")
+def my_cohort(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """The current user's class, or null if they haven't joined one."""
+    if not user.cohort_id:
+        return {"cohort": None}
+    c = db.get(Cohort, user.cohort_id)
+    return {"cohort": _cohort_out(c, _member_count(db, c.id)) if c else None}
+
+
+@app.get("/leaderboard")
+def leaderboard(days: int = Query(7, ge=1, le=365), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Weekly XP ranking scoped to the user's cohort. ponytail: weekly XP is
+    recomputed from review_log (grade + word CEFR via gamify.xp_for) over the
+    window — no stored per-period XP, no game_sessions table. Aggregated in
+    Python (O(rows)); fine at ~100 users — push to a SQL CASE sum if it grows."""
+    if not user.cohort_id:
+        return {"cohort": None, "entries": []}
+    c = db.get(Cohort, user.cohort_id)
+    members = db.scalars(select(User).where(User.cohort_id == user.cohort_id)).all()
+    names = {m.id: (m.display_name or (m.email.split("@")[0] if m.email else None) or f"User {m.id}") for m in members}
+    xp = {m.id: 0 for m in members}
+
+    since = now() - timedelta(days=days)
+    rows = db.execute(
+        select(ReviewLog.user_id, ReviewLog.result, Word.cefr_level)
+        .join(Word, Word.id == ReviewLog.word_id)
+        .where(ReviewLog.user_id.in_(list(xp.keys())))
+        .where(ReviewLog.reviewed_at >= since)
+    ).all()
+    for uid, result, cefr in rows:
+        xp[uid] += gamify.xp_for(result, cefr)
+
+    entries = sorted(
+        ({"user_id": uid, "display_name": names[uid], "weekly_xp": pts,
+          "is_me": uid == user.id} for uid, pts in xp.items()),
+        key=lambda e: e["weekly_xp"], reverse=True,
+    )
+    for i, e in enumerate(entries, 1):
+        e["rank"] = i
+    return {"cohort": _cohort_out(c, len(members)) if c else None, "entries": entries}
+
+
 def _seconds(s: float):
-    from datetime import timedelta
     return timedelta(seconds=s)

@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/section_label.dart';
+import 'class_module.dart';
 
 /// Phase 3 dashboard + Phase 5 modules: live streak / XP / words-learned tiles,
 /// then "work on these" (weak words) and "try next" (suggested words).
@@ -44,6 +45,8 @@ class ProgressScreen extends ConsumerWidget {
         _tipList(suggested, '✨',
             empty: 'Look up some words to get suggestions.',
             trailing: (w) => w.isAcademic ? 'academic' : null),
+        const SizedBox(height: 20),
+        const ClassModule(),
       ],
     );
   }

@@ -36,7 +36,7 @@ cd backend
 uv sync                       # install deps into .venv
 uv run python sm2.py          # SM-2 self-check (should print "all assertions passed")
 uv run python seed.py         # create tables + seed metadata, families, user 1, demo decks
-uv run uvicorn main:app --reload   # serve on http://localhost:8000
+uv run python -m uvicorn main:app --reload   # serve on http://localhost:8000
 ```
 
 ## Endpoints (curl)

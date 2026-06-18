@@ -25,8 +25,25 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String, nullable=True)
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     auth_provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    # password auth (ponytail: pbkdf2 hash + one opaque bearer token per user;
+    # null for the legacy seeded user / future Firebase users). See auth.py.
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    token: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     native_language: Mapped[str | None] = mapped_column(String, nullable=True)
     current_level: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Phase 7: the class/cohort this student joined (null = not in a class).
+    cohort_id: Mapped[int | None] = mapped_column(ForeignKey("cohorts.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Cohort(Base):
+    """A class group (build-plan 5.4 / Phase 7). Teacher creates it, students
+    join with the short join_code; the leaderboard is scoped to members."""
+    __tablename__ = "cohorts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+    join_code: Mapped[str] = mapped_column(String, unique=True, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

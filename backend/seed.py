@@ -13,6 +13,8 @@ CEFR-J + AWL CSVs (same columns) in its place for full coverage.
 import csv
 import os
 
+from sqlalchemy import select
+
 from db import engine, Base, SessionLocal
 from models import User, WordMetadata, WordFamily, Deck, DeckCard, CardProgress, utcnow
 from lookup import get_or_fetch_word, WordNotFound
@@ -78,15 +80,37 @@ def load_families(db):
 
 
 def ensure_user(db):
-    if not db.get(User, 1):
-        db.add(User(id=1, display_name="Test User", native_language="ru", current_level="B1"))
+    """Demo login so existing decks/progress are reachable. Returns the user id.
+    ponytail: don't hardcode id=1 — an explicit PK doesn't advance the SERIAL
+    sequence, so the first real /auth/register would collide on id=1. Let it
+    autoincrement and key the demo user by email instead."""
+    from auth import hash_password, new_token
+    u = db.scalar(select(User).where(User.email == "demo@lexika.app"))
+    if not u:
+        u = db.get(User, 1)  # legacy pre-auth seeded user (no email)
+    if not u:
+        u = User(
+            display_name="Test User", native_language="ru", current_level="B1",
+            email="demo@lexika.app", auth_provider="password",
+            password_hash=hash_password("demo1234"), token=new_token(),
+        )
+        db.add(u)
         db.commit()
-        print("  users: created user_id=1 (ru)")
+        db.refresh(u)
+        print(f"  users: created demo user id={u.id}  (demo@lexika.app / demo1234)")
+    elif not u.password_hash:  # backfill login onto a pre-auth seeded user
+        u.email = u.email or "demo@lexika.app"
+        u.auth_provider = "password"
+        u.password_hash = hash_password("demo1234")
+        u.token = new_token()
+        db.commit()
+        print(f"  users: added demo login to user id={u.id}  (demo@lexika.app / demo1234)")
     else:
-        print("  users: user_id=1 already exists")
+        print(f"  users: demo user id={u.id} already exists")
+    return u.id
 
 
-def seed_decks(db):
+def seed_decks(db, user_id):
     import httpx
     if db.query(Deck).count():
         print("  decks: already seeded, skipping")
@@ -94,7 +118,7 @@ def seed_decks(db):
     client = httpx.Client(timeout=20)
     try:
         for name, words in DEMO_DECKS:
-            deck = Deck(user_id=1, name=name)
+            deck = Deck(user_id=user_id, name=name)
             db.add(deck)
             db.commit()
             db.refresh(deck)
@@ -108,8 +132,8 @@ def seed_decks(db):
                     continue
                 db.add(DeckCard(deck_id=deck.id, word_id=word.id))
                 # make it reviewable immediately
-                if not db.query(CardProgress).filter_by(user_id=1, word_id=word.id).first():
-                    db.add(CardProgress(user_id=1, word_id=word.id, next_review_at=utcnow()))
+                if not db.query(CardProgress).filter_by(user_id=user_id, word_id=word.id).first():
+                    db.add(CardProgress(user_id=user_id, word_id=word.id, next_review_at=utcnow()))
                 db.commit()
                 added += 1
             print(f"  deck {name!r}: {added} cards")
@@ -124,8 +148,8 @@ def main():
         print("Seeding Lexika...")
         load_metadata(db)
         load_families(db)
-        ensure_user(db)
-        seed_decks(db)
+        uid = ensure_user(db)
+        seed_decks(db, uid)
         print("Done.")
     finally:
         db.close()

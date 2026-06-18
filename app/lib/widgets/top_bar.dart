@@ -71,6 +71,20 @@ class TopBar extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               BouncePress(
+                onTap: () => ref.read(authControllerProvider.notifier).logout(),
+                pressedScale: 0.9,
+                child: GlassSurface(
+                  radius: 100,
+                  tint: AppColors.violet,
+                  opacity: 0.18,
+                  shadow: AppColors.shadowSm,
+                  padding: const EdgeInsets.all(8),
+                  child: const Icon(Icons.logout_rounded,
+                      size: 18, color: AppColors.violet),
+                ),
+              ),
+              const SizedBox(width: 8),
+              BouncePress(
                 onTap: () {},
                 pressedScale: 0.94,
                 child: GlassSurface(
