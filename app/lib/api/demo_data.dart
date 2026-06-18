@@ -69,4 +69,37 @@ class Demo {
         translation: 'устойчивый',
         exampleEn: 'A resilient community recovers quickly.'),
   ];
+
+  static const weakWords = [
+    WordTip(
+        wordId: 0,
+        headword: 'arbitrary',
+        definitionEn: 'based on random choice rather than reason',
+        translation: 'произвольный',
+        cefrLevel: 'B2',
+        accuracy: 0.33),
+    WordTip(
+        wordId: 0,
+        headword: 'nuance',
+        definitionEn: 'a subtle difference in meaning',
+        translation: 'нюанс',
+        cefrLevel: 'C1',
+        accuracy: 0.5),
+  ];
+
+  static const suggestedWords = [
+    WordTip(
+        wordId: 0,
+        headword: 'coherent',
+        definitionEn: 'logical and consistent',
+        translation: 'связный',
+        cefrLevel: 'B2',
+        isAcademic: true),
+    WordTip(
+        wordId: 0,
+        headword: 'inevitable',
+        definitionEn: 'certain to happen; unavoidable',
+        translation: 'неизбежный',
+        cefrLevel: 'B2'),
+  ];
 }

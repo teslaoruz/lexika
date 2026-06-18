@@ -177,6 +177,39 @@ class UserStats {
       );
 }
 
+/// One row in the Progress screen's weak-words / suggested-words lists. Both
+/// endpoints share this shape; the optional fields are what differs (accuracy
+/// for weak words, isAcademic for suggestions). ponytail: one model, two lists.
+class WordTip {
+  final int wordId;
+  final String headword;
+  final String? definitionEn;
+  final String? translation;
+  final String? cefrLevel;
+  final double? accuracy; // weak words only
+  final bool isAcademic; // suggestions only
+
+  const WordTip({
+    required this.wordId,
+    required this.headword,
+    this.definitionEn,
+    this.translation,
+    this.cefrLevel,
+    this.accuracy,
+    this.isAcademic = false,
+  });
+
+  factory WordTip.fromJson(Map<String, dynamic> j) => WordTip(
+        wordId: (j['word_id'] ?? 0) as int,
+        headword: (j['headword'] ?? '') as String,
+        definitionEn: j['definition_en'] as String?,
+        translation: j['translation'] as String?,
+        cefrLevel: j['cefr_level'] as String?,
+        accuracy: (j['accuracy'] as num?)?.toDouble(),
+        isAcademic: (j['is_academic'] ?? false) as bool,
+      );
+}
+
 List<String> _strList(dynamic v) =>
     (v as List?)?.map((e) => e.toString()).toList() ?? const [];
 

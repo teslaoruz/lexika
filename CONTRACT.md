@@ -95,6 +95,24 @@ multiplier (A1 1.0 … C2 2.6); see `gamify.py`. Streak increments once per cale
 day of review, resets if a day is missed. `total_words_learned` = card_progress rows
 with `repetitions >= 2` (computed on read, not stored).
 
+## Suggestions (Phase 5 — weakness tracking)
+
+### GET /words/weak?limit=10  → words the user keeps missing
+```json
+[{"word_id":12,"headword":"arbitrary","definition_en":"...","translation":"...",
+  "cefr_level":"B2","ease_factor":1.8,"accuracy":0.33}]
+```
+Attempted words with SM-2 `ease_factor < 2.5`, hardest (lowest ease) first.
+`accuracy` = total_correct / total_attempts. Empty array = nothing weak yet.
+
+### GET /words/suggested?limit=10  → words to learn next
+```json
+[{"word_id":30,"headword":"coherent","definition_en":"...","translation":"...",
+  "cefr_level":"B2","is_academic":true}]
+```
+Cached words the user hasn't started, ordered: at the user's `current_level`
+first, then academic words, then most frequent (`word_metadata.frequency_rank`).
+
 ## Seed (runs once on `make seed` / startup)
 - Load CEFR-J wordlist CSV + AWL list into `word_metadata(word, cefr_level, is_academic, frequency_rank)`.
 - Load AWL word-family groupings into `word_family`.

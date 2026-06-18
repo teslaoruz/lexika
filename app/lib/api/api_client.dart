@@ -110,4 +110,18 @@ class ApiClient {
     final j = await _get(_u('/stats'));
     return UserStats.fromJson(j as Map<String, dynamic>);
   }
+
+  Future<List<WordTip>> weakWords({int limit = 10}) async {
+    final j = await _get(_u('/words/weak', {'limit': limit}));
+    return (j as List)
+        .map((e) => WordTip.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<WordTip>> suggested({int limit = 10}) async {
+    final j = await _get(_u('/words/suggested', {'limit': limit}));
+    return (j as List)
+        .map((e) => WordTip.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 }

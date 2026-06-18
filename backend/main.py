@@ -232,6 +232,70 @@ def review_due(limit: int = Query(20, ge=1, le=200), db: Session = Depends(get_d
     ]
 
 
+@app.get("/words/weak")
+def weak_words(limit: int = Query(10, ge=1, le=100), db: Session = Depends(get_db)):
+    """Words the user keeps struggling with. ponytail: ranked by SM-2 ease_factor
+    (lower = harder), which the scheduler already maintains — no extra tracking.
+    Only words actually attempted; default ease 2.5 means 'not yet hard'."""
+    rows = db.execute(
+        select(Word, CardProgress)
+        .join(CardProgress, CardProgress.word_id == Word.id)
+        .where(CardProgress.user_id == USER_ID)
+        .where(CardProgress.total_attempts > 0)
+        .where(CardProgress.ease_factor < 2.5)
+        .order_by(CardProgress.ease_factor.asc())
+        .limit(limit)
+    ).all()
+    user = db.get(User, USER_ID)
+    lang = user.native_language if user else None
+    return [
+        {
+            "word_id": w.id,
+            "headword": w.headword,
+            "definition_en": w.definition_en,
+            "translation": (w.translations or {}).get(lang) if lang else None,
+            "cefr_level": w.cefr_level,
+            "ease_factor": round(p.ease_factor, 2),
+            "accuracy": round(p.total_correct / p.total_attempts, 2) if p.total_attempts else None,
+        }
+        for w, p in rows
+    ]
+
+
+@app.get("/words/suggested")
+def suggested_words(limit: int = Query(10, ge=1, le=100), db: Session = Depends(get_db)):
+    """Words to learn next: cached words the user hasn't started, at their level,
+    academic words first, then most-frequent. ponytail: ranks over already-cached
+    words (build-plan 5.1) — no new content pipeline."""
+    user = db.get(User, USER_ID)
+    level = user.current_level if user else None
+    seen = select(CardProgress.word_id).where(CardProgress.user_id == USER_ID)
+    rows = db.execute(
+        select(Word, models.WordMetadata)
+        .outerjoin(models.WordMetadata, models.WordMetadata.word == Word.headword)
+        .where(Word.id.notin_(seen))
+        .where(Word.definition_en.isnot(None))
+        .order_by(
+            (Word.cefr_level == level).desc(),       # at my level first
+            Word.is_academic.desc(),                 # academic words next
+            models.WordMetadata.frequency_rank.asc().nulls_last(),  # then most common
+        )
+        .limit(limit)
+    ).all()
+    lang = user.native_language if user else None
+    return [
+        {
+            "word_id": w.id,
+            "headword": w.headword,
+            "definition_en": w.definition_en,
+            "translation": (w.translations or {}).get(lang) if lang else None,
+            "cefr_level": w.cefr_level,
+            "is_academic": w.is_academic,
+        }
+        for w, _ in rows
+    ]
+
+
 # Games map a correct/incorrect answer onto an SM-2 grade and tag the review_log
 # row with how it was tested (build-plan 5.3). ponytail: no separate game_sessions
 # table — review_log.game_type already carries this; add game_sessions when Phase 7

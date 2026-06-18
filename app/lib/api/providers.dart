@@ -73,3 +73,24 @@ final dueCardsProvider = FutureProvider.autoDispose<List<ReviewCard>>((ref) asyn
     return Demo.due;
   }
 });
+
+/// Phase 5: words the learner struggles with (low SM-2 ease) and words to try
+/// next. Empty list is a valid, expected state (nothing weak yet / all started).
+final weakWordsProvider = FutureProvider.autoDispose<List<WordTip>>((ref) async {
+  final api = ref.watch(apiClientProvider);
+  try {
+    return await api.weakWords();
+  } on ApiException {
+    return Demo.weakWords;
+  }
+});
+
+final suggestedWordsProvider =
+    FutureProvider.autoDispose<List<WordTip>>((ref) async {
+  final api = ref.watch(apiClientProvider);
+  try {
+    return await api.suggested();
+  } on ApiException {
+    return Demo.suggestedWords;
+  }
+});
