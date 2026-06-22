@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/bounce_press.dart';
+import '../../widgets/empty_state.dart';
 import '../games/games_screen.dart';
 import '../review/review_screen.dart';
 
@@ -20,10 +21,22 @@ class DecksScreen extends ConsumerWidget {
     return decks.when(
       loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.violet)),
-      error: (_, _) => const Center(child: Text('Could not load decks')),
+      error: (_, _) => const Center(
+        child: EmptyState(
+          emoji: '🙈',
+          title: 'Could not load decks',
+          subtitle: 'Check your connection and pull back in a moment.',
+        ),
+      ),
       data: (list) {
         final totalDue = list.fold<int>(0, (a, d) => a + d.dueCount);
         final totalSaved = list.fold<int>(0, (a, d) => a + d.cardCount);
+        // Real weak-word count drives the banner; hide it when there's nothing
+        // to practise rather than showing a hardcoded number.
+        final weakCount = ref.watch(weakWordsProvider).maybeWhen(
+              data: (w) => w.length,
+              orElse: () => 0,
+            );
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
           children: [
@@ -41,8 +54,10 @@ class DecksScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 22),
-            _weakBanner(context),
-            const SizedBox(height: 22),
+            if (weakCount > 0) ...[
+              _weakBanner(context, weakCount),
+              const SizedBox(height: 22),
+            ],
             const GamesSection(),
             const SizedBox(height: 22),
             Row(
@@ -70,10 +85,18 @@ class DecksScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 14),
-            for (final d in list) ...[
-              _deckCard(context, d),
-              const SizedBox(height: 10),
-            ],
+            if (list.isEmpty)
+              const EmptyState(
+                emoji: '🗂️',
+                title: 'No decks yet',
+                subtitle:
+                    'Look up a word and tap “Save to deck” to start your first one.',
+              )
+            else
+              for (final d in list) ...[
+                _deckCard(context, d),
+                const SizedBox(height: 10),
+              ],
           ],
         );
       },
@@ -110,7 +133,7 @@ class DecksScreen extends ConsumerWidget {
         ),
       );
 
-  Widget _weakBanner(BuildContext context) => BouncePress(
+  Widget _weakBanner(BuildContext context, int count) => BouncePress(
         onTap: () => _openReview(context),
         pressedScale: 0.97,
         child: Container(
@@ -147,7 +170,7 @@ class DecksScreen extends ConsumerWidget {
                             weight: FontWeight.w700,
                             color: AppColors.white)),
                     const SizedBox(height: 2),
-                    Text('14 words need extra attention',
+                    Text('$count word${count == 1 ? '' : 's'} need extra attention',
                         style: AppTheme.quick(
                             size: 12,
                             weight: FontWeight.w600,

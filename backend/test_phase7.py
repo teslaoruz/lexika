@@ -63,6 +63,20 @@ def main_test():
     # a user not in any cohort gets an empty leaderboard, not an error
     empty = c.get("/leaderboard", headers=_h(lone)).json()
     assert empty["cohort"] is None and empty["entries"] == []
+
+    # teacher dashboard: only the creator (A) may view students; B (a member)
+    # and lone (no class) are both forbidden.
+    ts = c.get("/cohort/students", headers=_h(a))
+    assert ts.status_code == 200, ts.text
+    data = ts.json()
+    assert data["cohort"]["member_count"] == 2
+    rows = data["students"]
+    assert [r["weekly_xp"] for r in rows] == [18, 9]  # sorted desc, same window as leaderboard
+    teacher = next(r for r in rows if r["display_name"] == "a")
+    assert teacher["is_teacher"] and teacher["total_xp"] == 18
+    assert next(r for r in rows if r["display_name"] == "b")["is_teacher"] is False
+    assert c.get("/cohort/students", headers=_h(b)).status_code == 403  # member, not teacher
+    assert c.get("/cohort/students", headers=_h(lone)).status_code == 403  # no class
     print("phase 7 self-check ok")
 
 

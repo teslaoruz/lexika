@@ -52,8 +52,8 @@ lib, no new deps); the Flutter client attaches it to every user-scoped request,
 and every endpoint now reads the real user instead of a hardcoded id. Seeded
 demo login: `demo@lexika.app` / `demo1234`. Firebase is a drop-in later — swap
 `backend/auth.py:current_user` to verify a Firebase ID token; nothing else
-changes. ponytail: session is in-memory on the client (re-login on restart) —
-add `shared_preferences` to persist it.
+changes. The client persists the bearer token with `shared_preferences` and
+validates it via `/auth/me` on launch, so the session survives app restarts.
 
 ## Phase 7 — cohorts + leaderboard
 Students join a class with a short code (or create one as the teacher); the
@@ -62,8 +62,14 @@ one class per student (`users.cohort_id`), and weekly XP is recomputed from
 `review_log` over the window (no stored per-period XP, no `game_sessions` table).
 See `/cohorts`, `/cohorts/join`, `/cohort`, `/leaderboard` in CONTRACT.md.
 
+The Progress screen also shows an **accuracy-by-CEFR-level** bar chart (six bars
+A1…C2, sized Containers — no chart dependency) from `/stats/accuracy_by_level`.
+The class **teacher** (the cohort creator) gets a **Teacher view** panel on the
+same screen — per-student weekly/total XP, streak, and words-learned from
+`/cohort/students` (creator-only, 403 otherwise).
+
 ## Deferred on purpose (ponytail — add when the core loop is proven)
 Firebase / Google·Apple social login (email+password covers multi-user now) ·
-client session persistence · multi-class membership (one class per student now) ·
-`game_sessions` table (review_log covers per-answer tracking for now) · progress
-charts (accuracy by level) · Redis · Alembic.
+multi-class membership (one class per student now) ·
+`game_sessions` table (review_log covers per-answer tracking for now) ·
+Redis · Alembic.

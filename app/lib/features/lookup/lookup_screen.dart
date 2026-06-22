@@ -56,7 +56,7 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
               borderRadius: BorderRadius.circular(20),
               boxShadow: AppColors.shadowSm,
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             child: Row(
               children: [
                 Container(

@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io' show Platform, SocketException;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
@@ -20,8 +22,19 @@ class ApiClient {
   // Override per platform with --dart-define=API_BASE=... e.g. the Android
   // emulator reaches the host backend at 10.0.2.2, a physical phone at the
   // host's LAN IP. ponytail: one env knob beats a build flavor matrix.
-  static const _defaultBase =
-      String.fromEnvironment('API_BASE', defaultValue: 'http://localhost:8000');
+  static const _envBase = String.fromEnvironment('API_BASE');
+
+  /// The base URL used when no override is passed. If API_BASE wasn't supplied
+  /// at build time, pick a sane per-platform default instead of bare
+  /// `localhost` — on a phone/emulator `localhost` resolves to the *device*,
+  /// not the dev machine, which is exactly why auth failed silently. The
+  /// Android emulator reaches the host at 10.0.2.2; a physical phone still
+  /// needs `--dart-define=API_BASE=http://<LAN-IP>:8000` (no way to guess it).
+  static String get _defaultBase {
+    if (_envBase.isNotEmpty) return _envBase;
+    if (!kIsWeb && Platform.isAndroid) return 'http://10.0.2.2:8000';
+    return 'http://localhost:8000';
+  }
 
   ApiClient({String? baseUrl, http.Client? client})
       : baseUrl = baseUrl ?? _defaultBase,
@@ -32,8 +45,8 @@ class ApiClient {
   static const _timeout = Duration(seconds: 6);
 
   /// Bearer token set by the auth controller after login/register; attached to
-  /// every request. ponytail: in-memory only (re-login on app restart) — add
-  /// shared_preferences to persist the session across launches.
+  /// every request. Persisted across launches via shared_preferences (see
+  /// AuthController._restore).
   String? token;
 
   Map<String, String> _headers([bool json = false]) {
@@ -62,8 +75,20 @@ class ApiClient {
     } on ApiException {
       rethrow;
     } catch (e) {
-      throw ApiException("Couldn't reach server: $e");
+      throw ApiException(_reachMessage(e));
     }
+  }
+
+  /// Turns a raw transport failure into something a user can act on. A
+  /// SocketException almost always means the configured host isn't reachable
+  /// from this device (the classic localhost-on-a-phone mistake).
+  String _reachMessage(Object e) {
+    if (e is SocketException) {
+      return "Can't reach the server at $baseUrl. "
+          "Check it's running and reachable from this device "
+          "(on a phone, pass --dart-define=API_BASE=http://<LAN-IP>:8000).";
+    }
+    return "Couldn't reach the server: $e";
   }
 
   Future<dynamic> _post(Uri url, Map<String, dynamic> body) async {
@@ -83,7 +108,7 @@ class ApiClient {
     } on ApiException {
       rethrow;
     } catch (e) {
-      throw ApiException("Couldn't reach server: $e");
+      throw ApiException(_reachMessage(e));
     }
   }
 
@@ -149,6 +174,13 @@ class ApiClient {
     return UserStats.fromJson(j as Map<String, dynamic>);
   }
 
+  Future<List<LevelAccuracy>> accuracyByLevel() async {
+    final j = await _get(_u('/stats/accuracy_by_level'));
+    return (j as List)
+        .map((e) => LevelAccuracy.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<WordTip>> weakWords({int limit = 10}) async {
     final j = await _get(_u('/words/weak', {'limit': limit}));
     return (j as List)
@@ -178,6 +210,15 @@ class ApiClient {
   Future<Cohort> joinCohort(String code) async =>
       Cohort.fromJson(await _post(_u('/cohorts/join'), {'code': code})
           as Map<String, dynamic>);
+
+  /// Teacher dashboard: per-student progress for the teacher's class.
+  /// Throws ApiException(403) if the caller isn't the class teacher.
+  Future<List<StudentProgress>> cohortStudents() async {
+    final j = await _get(_u('/cohort/students')) as Map<String, dynamic>;
+    return ((j['students'] as List?) ?? [])
+        .map((e) => StudentProgress.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 
   Future<List<LeaderboardEntry>> leaderboard() async {
     final j = await _get(_u('/leaderboard')) as Map<String, dynamic>;

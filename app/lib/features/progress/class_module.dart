@@ -38,6 +38,7 @@ class _ClassModuleState extends ConsumerState<ClassModule> {
       await call(ref.read(apiClientProvider));
       ref.invalidate(cohortProvider);
       ref.invalidate(leaderboardProvider);
+      ref.invalidate(cohortStudentsProvider);
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -187,9 +188,89 @@ class _ClassModuleState extends ConsumerState<ClassModule> {
                   ],
                 ),
         ),
+        if (c.isTeacher) _teacherDashboard(),
       ],
     );
   }
+
+  /// Teacher-only: per-student progress across the class. ponytail: an
+  /// ExpansionTile inside the same module, not a separate screen/route.
+  Widget _teacherDashboard() {
+    final students = ref.watch(cohortStudentsProvider);
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: AppCard(
+        padding: EdgeInsets.zero,
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            title: Text('Teacher view — student progress',
+                style: AppTheme.baloo(size: 15, weight: FontWeight.w700)),
+            children: [
+              students.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Center(
+                      child: CircularProgressIndicator(color: AppColors.violet)),
+                ),
+                error: (_, _) => const Text('Could not load students'),
+                data: (list) => Column(
+                  children: [
+                    for (final s in list) ...[
+                      _studentRow(s),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _studentRow(StudentProgress s) {
+    final name = s.isTeacher ? '${s.displayName} (you)' : s.displayName;
+    return AppCard(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+      color: AppColors.bgSoft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(name,
+              overflow: TextOverflow.ellipsis,
+              style: AppTheme.baloo(size: 15, weight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 14,
+            runSpacing: 4,
+            children: [
+              _stat('${s.weeklyXp} XP', 'this week'),
+              _stat('${s.totalXp} XP', 'total'),
+              _stat('🔥 ${s.currentStreak}', 'streak'),
+              _stat('✅ ${s.wordsLearned}', 'learned'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stat(String value, String label) => RichText(
+        text: TextSpan(children: [
+          TextSpan(
+              text: '$value ',
+              style: AppTheme.quick(
+                  size: 13, weight: FontWeight.w700, color: AppColors.ink)),
+          TextSpan(
+              text: label,
+              style: AppTheme.quick(
+                  size: 11.5, weight: FontWeight.w500, color: AppColors.inkFaint)),
+        ]),
+      );
 
   Widget _row(LeaderboardEntry e) {
     final medal = switch (e.rank) { 1 => '🥇', 2 => '🥈', 3 => '🥉', _ => null };

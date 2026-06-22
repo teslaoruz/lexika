@@ -14,8 +14,7 @@ final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
 
 /// Auth session. `user == null` means signed out → the app shows the sign-in
 /// screen. The token lives on [ApiClient]; this just drives the gate + UI.
-/// ponytail: session is in-memory (re-login on restart); persist with
-/// shared_preferences when staying-logged-in matters.
+/// The token is persisted via shared_preferences and restored on launch.
 class AuthState {
   final bool loading;
   final Map<String, dynamic>? user;
@@ -87,6 +86,7 @@ class AuthController extends Notifier<AuthState> {
   // Non-autoDispose, user-specific providers — reset them on session change.
   void _invalidateUserData() {
     ref.invalidate(statsProvider);
+    ref.invalidate(accuracyByLevelProvider);
     ref.invalidate(cohortProvider);
     ref.invalidate(leaderboardProvider);
   }
@@ -148,6 +148,13 @@ final statsProvider = FutureProvider<UserStats>((ref) async {
   }
 });
 
+/// Accuracy by CEFR level for the Progress chart. Empty/all-null is a valid
+/// state (nothing reviewed yet). No demo fallback — it's real and user-specific.
+final accuracyByLevelProvider =
+    FutureProvider<List<LevelAccuracy>>((ref) async {
+  return ref.watch(apiClientProvider).accuracyByLevel();
+});
+
 final dueCardsProvider = FutureProvider.autoDispose<List<ReviewCard>>((ref) async {
   final api = ref.watch(apiClientProvider);
   try {
@@ -188,4 +195,11 @@ final cohortProvider = FutureProvider<Cohort?>((ref) async {
 final leaderboardProvider =
     FutureProvider<List<LeaderboardEntry>>((ref) async {
   return ref.watch(apiClientProvider).leaderboard();
+});
+
+/// Teacher dashboard: only fetched by the class teacher (the UI gates this on
+/// cohort.isTeacher). autoDispose — only the teacher's expanded panel watches it.
+final cohortStudentsProvider =
+    FutureProvider.autoDispose<List<StudentProgress>>((ref) async {
+  return ref.watch(apiClientProvider).cohortStudents();
 });

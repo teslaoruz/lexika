@@ -17,6 +17,7 @@ class ProgressScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final stats = ref.watch(statsProvider);
+    final accuracy = ref.watch(accuracyByLevelProvider);
     final weak = ref.watch(weakWordsProvider);
     final suggested = ref.watch(suggestedWordsProvider);
     return ListView(
@@ -30,6 +31,18 @@ class ProgressScreen extends ConsumerWidget {
           ),
           error: (_, _) => _centered('Could not load progress'),
           data: _tiles,
+        ),
+        const SizedBox(height: 20),
+        const SectionLabel('Accuracy by level'),
+        const SizedBox(height: 10),
+        accuracy.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(
+                child: CircularProgressIndicator(color: AppColors.violet)),
+          ),
+          error: (_, _) => _centered('Could not load accuracy'),
+          data: _accuracyChart,
         ),
         const SizedBox(height: 20),
         const SectionLabel('Work on these'),
@@ -92,6 +105,72 @@ class ProgressScreen extends ConsumerWidget {
           ],
         );
       },
+    );
+  }
+
+  /// Accuracy-by-CEFR bar chart. ponytail: bars are sized Containers, no
+  /// chart dependency. Empty bar = no attempts at that level yet.
+  Widget _accuracyChart(List<LevelAccuracy> levels) {
+    if (levels.every((l) => l.attempts == 0)) {
+      return AppCard(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'Review some words and your accuracy per level shows up here.',
+            style: AppTheme.quick(
+                size: 13,
+                weight: FontWeight.w500,
+                height: 1.4,
+                color: AppColors.inkFaint),
+          ),
+        ),
+      );
+    }
+    const maxBar = 110.0;
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (final l in levels)
+            Expanded(child: _bar(l, maxBar)),
+        ],
+      ),
+    );
+  }
+
+  Widget _bar(LevelAccuracy l, double maxBar) {
+    final pct = l.accuracy ?? 0;
+    // Red→amber→green as accuracy climbs; faint placeholder when untried.
+    final color = l.attempts == 0
+        ? AppColors.bgSoft
+        : pct >= 0.8
+            ? AppColors.mintDark
+            : pct >= 0.5
+                ? AppColors.amberDark
+                : AppColors.coralDark;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(l.accuracy == null ? '—' : '${(pct * 100).round()}%',
+            style: AppTheme.quick(
+                size: 11,
+                weight: FontWeight.w700,
+                color: l.attempts == 0 ? AppColors.inkFaint : AppColors.inkSoft)),
+        const SizedBox(height: 6),
+        Container(
+          height: 8 + maxBar * pct,
+          margin: const EdgeInsets.symmetric(horizontal: 5),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(6),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(l.level,
+            style: AppTheme.quick(
+                size: 12, weight: FontWeight.w700, color: AppColors.ink)),
+      ],
     );
   }
 

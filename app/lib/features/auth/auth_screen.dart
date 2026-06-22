@@ -55,9 +55,24 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       } else {
         await auth.login(email, pw);
       }
-      // On success the gate (LexikaApp) swaps to the app shell automatically.
+      // On success the gate (LexikaApp) swaps to the app shell. Flash a quick
+      // confirmation first so the tap clearly registered.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(
+          content: Text(_register ? 'Account created 🎉' : 'Welcome back 👋',
+              style: AppTheme.baloo(
+                  size: 14.5, weight: FontWeight.w700, color: AppColors.white)),
+          duration: const Duration(milliseconds: 1200),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.mintDark,
+        ));
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      // Defensive: never fail silently, even on an unexpected error type.
+      if (mounted) setState(() => _error = 'Something went wrong. Please try again.');
     }
   }
 
@@ -107,11 +122,29 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             size: 13.5, color: AppColors.coralDark)),
                   ],
                   const SizedBox(height: 20),
-                  AppButton(
-                    label: loading
-                        ? 'Please wait…'
-                        : (_register ? 'Sign up' : 'Log in'),
-                    onTap: loading ? null : _submit,
+                  // Spinner overlays the button while a request is in flight so
+                  // the tap visibly registers (the old "Please wait…" label gave
+                  // no motion feedback).
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Opacity(
+                        opacity: loading ? 0.6 : 1,
+                        child: AppButton(
+                          label: loading
+                              ? ''
+                              : (_register ? 'Sign up' : 'Log in'),
+                          onTap: loading ? null : _submit,
+                        ),
+                      ),
+                      if (loading)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.5, color: AppColors.white),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   TextButton(

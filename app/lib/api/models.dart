@@ -216,12 +216,14 @@ class Cohort {
   final String name;
   final String joinCode;
   final int memberCount;
+  final bool isTeacher; // current user created this class → can see the dashboard
 
   const Cohort({
     required this.id,
     required this.name,
     required this.joinCode,
     this.memberCount = 0,
+    this.isTeacher = false,
   });
 
   factory Cohort.fromJson(Map<String, dynamic> j) => Cohort(
@@ -229,6 +231,41 @@ class Cohort {
         name: (j['name'] ?? '') as String,
         joinCode: (j['join_code'] ?? '') as String,
         memberCount: (j['member_count'] ?? 0) as int,
+        isTeacher: (j['is_teacher'] ?? false) as bool,
+      );
+}
+
+/// One student row in the teacher dashboard.
+class StudentProgress {
+  final int userId;
+  final String displayName;
+  final bool isTeacher;
+  final int totalXp;
+  final int currentStreak;
+  final int wordsLearned;
+  final int weeklyXp;
+  final String? lastActive; // ISO date, null if never active
+
+  const StudentProgress({
+    required this.userId,
+    required this.displayName,
+    this.isTeacher = false,
+    this.totalXp = 0,
+    this.currentStreak = 0,
+    this.wordsLearned = 0,
+    this.weeklyXp = 0,
+    this.lastActive,
+  });
+
+  factory StudentProgress.fromJson(Map<String, dynamic> j) => StudentProgress(
+        userId: (j['user_id'] ?? 0) as int,
+        displayName: (j['display_name'] ?? '') as String,
+        isTeacher: (j['is_teacher'] ?? false) as bool,
+        totalXp: (j['total_xp'] ?? 0) as int,
+        currentStreak: (j['current_streak'] ?? 0) as int,
+        wordsLearned: (j['words_learned'] ?? 0) as int,
+        weeklyXp: (j['weekly_xp'] ?? 0) as int,
+        lastActive: j['last_active'] as String?,
       );
 }
 
@@ -250,6 +287,22 @@ class LeaderboardEntry {
         displayName: (j['display_name'] ?? '') as String,
         weeklyXp: (j['weekly_xp'] ?? 0) as int,
         isMe: (j['is_me'] ?? false) as bool,
+      );
+}
+
+/// One CEFR bar in the accuracy-by-level chart. accuracy == null means no
+/// attempts at that level yet (rendered as an empty bar).
+class LevelAccuracy {
+  final String level;
+  final double? accuracy;
+  final int attempts;
+
+  const LevelAccuracy({required this.level, this.accuracy, this.attempts = 0});
+
+  factory LevelAccuracy.fromJson(Map<String, dynamic> j) => LevelAccuracy(
+        level: (j['level'] ?? '') as String,
+        accuracy: (j['accuracy'] as num?)?.toDouble(),
+        attempts: (j['attempts'] ?? 0) as int,
       );
 }
 

@@ -58,7 +58,14 @@ def main_test():
     heads = [w["headword"] for w in sugg]
     assert "cat" not in heads and "aberration" not in heads, heads  # seen words excluded
     assert heads[0] == "ubiquitous", heads  # B1 (my level) + academic ranks above A1 apple
-    print("ok:", weak, sugg)
+
+    acc = c.get("/stats/accuracy_by_level", headers=AUTH).json()
+    by = {r["level"]: r for r in acc}
+    assert [r["level"] for r in acc] == ["A1", "A2", "B1", "B2", "C1", "C2"], acc  # all six, in order
+    assert by["A1"]["accuracy"] == 1.0 and by["A1"]["attempts"] == 3, acc  # word 2: 3/3
+    assert by["C1"]["accuracy"] == 0.25 and by["C1"]["attempts"] == 4, acc  # word 1: 1/4
+    assert by["B1"]["accuracy"] is None and by["B1"]["attempts"] == 0, acc  # untried level
+    print("ok:", weak, sugg, acc)
 
 
 if __name__ == "__main__":

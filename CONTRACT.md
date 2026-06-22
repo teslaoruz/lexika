@@ -110,6 +110,14 @@ multiplier (A1 1.0 … C2 2.6); see `gamify.py`. Streak increments once per cale
 day of review, resets if a day is missed. `total_words_learned` = card_progress rows
 with `repetitions >= 2` (computed on read, not stored).
 
+### GET /stats/accuracy_by_level  → accuracy per CEFR level (Progress chart)
+```json
+[{"level":"A1","attempts":3,"accuracy":1.0},{"level":"A2","attempts":0,"accuracy":null}, ...]
+```
+Always all six levels A1…C2 in order. `accuracy` = sum(total_correct)/sum(total_attempts)
+over the user's `card_progress` rows joined to each word's `cefr_level`;
+`null` (rendered as an empty bar) when no attempts at that level yet.
+
 ## Suggestions (Phase 5 — weakness tracking)
 
 ### GET /words/weak?limit=10  → words the user keeps missing
@@ -134,7 +142,8 @@ One class per student (`users.cohort_id`); join by a short code. All require aut
 
 ### POST /cohorts  body `{"name":"..."}`  → 201, creator auto-joins
 ### POST /cohorts/join  body `{"code":"AB3KПР"}`  → joins; 404 if no such code
-Both return `{"id","name","join_code","member_count"}`.
+Both return `{"id","name","join_code","member_count","is_teacher"}`.
+`is_teacher` is true when the requesting user created the class.
 ### GET /cohort  → `{"cohort": {...} | null}`  (null = not in a class)
 ### GET /leaderboard?days=7  → weekly XP ranking scoped to my cohort
 ```json
@@ -145,6 +154,17 @@ Both return `{"id","name","join_code","member_count"}`.
 weekly XP is recomputed from `review_log` (grade + word CEFR via `gamify.xp_for`)
 over the window — no stored per-period XP, no `game_sessions` table; aggregated
 in Python (fine at ~100 users, push to a SQL CASE-sum if it grows).
+
+### GET /cohort/students?days=7  → teacher dashboard (per-student progress)
+```json
+{"cohort": {...},
+ "students": [{"user_id":1,"display_name":"alice","is_teacher":true,
+   "total_xp":120,"current_streak":3,"words_learned":12,"weekly_xp":18,
+   "last_active":"2026-06-22"}]}
+```
+Only the class **creator** may call it (403 otherwise). Sorted by `weekly_xp` desc.
+Same window/recompute as `/leaderboard`; `total_xp`/`current_streak`/`words_learned`
+come from the same counters `/stats` reads.
 
 ## Seed (runs once on `make seed` / startup)
 - Load CEFR-J wordlist CSV + AWL list into `word_metadata(word, cefr_level, is_academic, frequency_rank)`.

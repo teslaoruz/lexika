@@ -486,6 +486,39 @@ def stats(user: User = Depends(current_user), db: Session = Depends(get_db)):
     }
 
 
+# Fixed CEFR axis so the chart always shows all six bars in order, even for
+# levels the user hasn't attempted yet. ponytail: accuracy summed from
+# card_progress (the same counters /words/weak reads), not recomputed from
+# review_log — one GROUP BY, no per-answer scan.
+_CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"]
+
+
+@app.get("/stats/accuracy_by_level")
+def accuracy_by_level(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(
+            Word.cefr_level,
+            func.sum(CardProgress.total_correct),
+            func.sum(CardProgress.total_attempts),
+        )
+        .join(Word, Word.id == CardProgress.word_id)
+        .where(CardProgress.user_id == user.id)
+        .where(Word.cefr_level.in_(_CEFR_ORDER))
+        .group_by(Word.cefr_level)
+    ).all()
+    by_level = {lvl: (correct or 0, attempts or 0) for lvl, correct, attempts in rows}
+    return [
+        {
+            "level": lvl,
+            "attempts": by_level.get(lvl, (0, 0))[1],
+            "accuracy": round(by_level[lvl][0] / by_level[lvl][1], 2)
+            if by_level.get(lvl, (0, 0))[1]
+            else None,
+        }
+        for lvl in _CEFR_ORDER
+    ]
+
+
 # ---------------------------------------------------- /cohorts + /leaderboard
 # ponytail: one cohort per student (cohort_id on the user), join by short code.
 # A join table would let a student be in several classes — add it then.
@@ -500,8 +533,12 @@ def _new_join_code(db: Session) -> str:
     raise HTTPException(500, "could not allocate a join code")  # ~never at this scale
 
 
-def _cohort_out(c: Cohort, member_count: int) -> dict:
-    return {"id": c.id, "name": c.name, "join_code": c.join_code, "member_count": member_count}
+def _cohort_out(c: Cohort, member_count: int, viewer_id: int | None = None) -> dict:
+    return {
+        "id": c.id, "name": c.name, "join_code": c.join_code,
+        "member_count": member_count,
+        "is_teacher": viewer_id is not None and c.created_by == viewer_id,
+    }
 
 
 def _member_count(db: Session, cohort_id: int) -> int:
@@ -523,7 +560,7 @@ def create_cohort(body: CohortCreate, user: User = Depends(current_user), db: Se
     db.refresh(c)
     user.cohort_id = c.id  # creator joins their own class
     db.commit()
-    return _cohort_out(c, _member_count(db, c.id))
+    return _cohort_out(c, _member_count(db, c.id), user.id)
 
 
 class CohortJoin(BaseModel):
@@ -537,7 +574,7 @@ def join_cohort(body: CohortJoin, user: User = Depends(current_user), db: Sessio
         raise HTTPException(404, "no class with that code")
     user.cohort_id = c.id
     db.commit()
-    return _cohort_out(c, _member_count(db, c.id))
+    return _cohort_out(c, _member_count(db, c.id), user.id)
 
 
 @app.get("/cohort")
@@ -546,7 +583,7 @@ def my_cohort(user: User = Depends(current_user), db: Session = Depends(get_db))
     if not user.cohort_id:
         return {"cohort": None}
     c = db.get(Cohort, user.cohort_id)
-    return {"cohort": _cohort_out(c, _member_count(db, c.id)) if c else None}
+    return {"cohort": _cohort_out(c, _member_count(db, c.id), user.id) if c else None}
 
 
 @app.get("/leaderboard")
@@ -580,6 +617,56 @@ def leaderboard(days: int = Query(7, ge=1, le=365), user: User = Depends(current
     for i, e in enumerate(entries, 1):
         e["rank"] = i
     return {"cohort": _cohort_out(c, len(members)) if c else None, "entries": entries}
+
+
+@app.get("/cohort/students")
+def cohort_students(days: int = Query(7, ge=1, le=365), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Teacher view: per-student progress across the teacher's own class.
+    Only the cohort's creator may call it. ponytail: reuses the leaderboard's
+    weekly-XP recompute and the /stats counters; no new tables, no roles system
+    beyond cohort.created_by == teacher."""
+    c = db.get(Cohort, user.cohort_id) if user.cohort_id else None
+    if not c or c.created_by != user.id:
+        raise HTTPException(403, "only the class teacher can view students")
+
+    members = db.scalars(select(User).where(User.cohort_id == c.id)).all()
+    ids = [m.id for m in members]
+
+    stats = {s.user_id: s for s in db.scalars(select(UserStats).where(UserStats.user_id.in_(ids))).all()}
+    learned = dict(db.execute(
+        select(CardProgress.user_id, func.count(CardProgress.id))
+        .where(CardProgress.user_id.in_(ids))
+        .where(CardProgress.repetitions >= LEARNED_REPS)
+        .group_by(CardProgress.user_id)
+    ).all())
+
+    weekly = {i: 0 for i in ids}
+    since = now() - timedelta(days=days)
+    rows = db.execute(
+        select(ReviewLog.user_id, ReviewLog.result, Word.cefr_level)
+        .join(Word, Word.id == ReviewLog.word_id)
+        .where(ReviewLog.user_id.in_(ids))
+        .where(ReviewLog.reviewed_at >= since)
+    ).all()
+    for uid, result, cefr in rows:
+        weekly[uid] += gamify.xp_for(result, cefr)
+
+    students = [
+        {
+            "user_id": m.id,
+            "display_name": m.display_name or (m.email.split("@")[0] if m.email else None) or f"User {m.id}",
+            "is_teacher": m.id == c.created_by,
+            "total_xp": stats[m.id].total_xp if m.id in stats else 0,
+            "current_streak": stats[m.id].current_streak if m.id in stats else 0,
+            "words_learned": learned.get(m.id, 0),
+            "weekly_xp": weekly[m.id],
+            "last_active": stats[m.id].last_active_date.isoformat()
+            if m.id in stats and stats[m.id].last_active_date else None,
+        }
+        for m in members
+    ]
+    students.sort(key=lambda s: s["weekly_xp"], reverse=True)
+    return {"cohort": _cohort_out(c, len(members), user.id), "students": students}
 
 
 def _seconds(s: float):
