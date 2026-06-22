@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +8,7 @@ import '../../api/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_chip.dart';
+import '../../widgets/bounce_press.dart';
 import '../../widgets/fade_up.dart';
 import 'entry_card.dart';
 
@@ -20,8 +23,12 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
   late final TextEditingController _ctrl =
       TextEditingController(text: ref.read(currentWordProvider));
 
+  Timer? _debounce;
+  List<String> _suggestions = const [];
+
   @override
   void dispose() {
+    _debounce?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -30,11 +37,40 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
     final w = word.trim().toLowerCase();
     if (w.isEmpty) return;
     _ctrl.text = w;
+    // Chosen / submitted: hide suggestions.
+    _debounce?.cancel();
+    if (_suggestions.isNotEmpty) setState(() => _suggestions = const []);
     ref.read(currentWordProvider.notifier).state = w;
     // Push to front of recent searches.
     final recents = ref.read(recentSearchesProvider);
     if (!recents.contains(w)) {
       ref.read(recentSearchesProvider.notifier).state = [w, ...recents].take(8).toList();
+    }
+  }
+
+  // Live autocomplete: debounce keystrokes, then fetch headword suggestions.
+  void _onChanged(String value) {
+    final q = value.trim();
+    _debounce?.cancel();
+    if (q.isEmpty) {
+      if (_suggestions.isNotEmpty) setState(() => _suggestions = const []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 250), () => _fetchSuggestions(q));
+  }
+
+  Future<void> _fetchSuggestions(String query) async {
+    try {
+      final results = await ref.read(apiClientProvider).suggest(query);
+      if (!mounted) return;
+      // Drop stale results if the box changed since the request started.
+      if (_ctrl.text.trim() != query) return;
+      setState(() => _suggestions = results);
+    } catch (_) {
+      // Never crash the screen on a suggest failure — just show nothing.
+      if (mounted && _suggestions.isNotEmpty) {
+        setState(() => _suggestions = const []);
+      }
     }
   }
 
@@ -74,6 +110,7 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
                   child: TextField(
                     controller: _ctrl,
                     textInputAction: TextInputAction.search,
+                    onChanged: _onChanged,
                     onSubmitted: _lookup,
                     style: AppTheme.quick(
                         size: 16,
@@ -94,6 +131,47 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
             ),
           ),
         ),
+        // Autocomplete dropdown — tappable headword suggestions.
+        if (_suggestions.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: AppColors.shadowSm,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  for (final s in _suggestions)
+                    BouncePress(
+                      onTap: () => _lookup(s),
+                      pressedScale: 0.98,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 18, vertical: 13),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.north_west_rounded,
+                                size: 15, color: AppColors.inkFaint),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(s,
+                                  style: AppTheme.quick(
+                                      size: 15,
+                                      weight: FontWeight.w600,
+                                      color: AppColors.ink)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
         // Recent chips.
         SizedBox(
           height: 46,

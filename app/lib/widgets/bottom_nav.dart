@@ -16,6 +16,7 @@ class BottomNav extends StatelessWidget {
     (Icons.search_rounded, 'Look up'),
     (Icons.view_week_rounded, 'Decks'),
     (Icons.show_chart_rounded, 'Progress'),
+    (Icons.person_rounded, 'Profile'),
   ];
 
   @override

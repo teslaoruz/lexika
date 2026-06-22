@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../api/api_client.dart';
 import '../../api/models.dart';
 import '../../api/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/bounce_press.dart';
 import '../../widgets/empty_state.dart';
@@ -66,7 +68,7 @@ class DecksScreen extends ConsumerWidget {
                 Text('Your decks',
                     style: AppTheme.baloo(size: 19, weight: FontWeight.w700)),
                 BouncePress(
-                  onTap: () {},
+                  onTap: () => _openNewDeck(context, ref),
                   pressedScale: 0.94,
                   child: Container(
                     padding:
@@ -258,6 +260,13 @@ class DecksScreen extends ConsumerWidget {
     ));
   }
 
+  void _openNewDeck(BuildContext context, WidgetRef ref) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _NewDeckDialog(ref: ref),
+    );
+  }
+
   String _initials(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
     if (parts.isEmpty) return '?';
@@ -274,5 +283,84 @@ class DecksScreen extends ConsumerWidget {
       (AppColors.pinkLight, AppColors.antText),
     ];
     return palette[d.id % palette.length];
+  }
+}
+
+/// Small branded dialog to create a deck. Stateful so the confirm button can
+/// be loading-guarded while [ApiClient.createDeck] is in flight.
+class _NewDeckDialog extends StatefulWidget {
+  const _NewDeckDialog({required this.ref});
+
+  final WidgetRef ref;
+
+  @override
+  State<_NewDeckDialog> createState() => _NewDeckDialogState();
+}
+
+class _NewDeckDialogState extends State<_NewDeckDialog> {
+  final _controller = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name = _controller.text.trim();
+    if (name.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      await widget.ref.read(apiClientProvider).createDeck(name);
+      widget.ref.invalidate(decksProvider);
+      if (mounted) Navigator.of(context).pop();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Text('New deck',
+          style: AppTheme.baloo(size: 19, weight: FontWeight.w700)),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        enabled: !_busy,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _submit(),
+        style: AppTheme.quick(size: 15, weight: FontWeight.w600),
+        decoration: InputDecoration(
+          hintText: 'Deck name',
+          hintStyle: AppTheme.quick(
+              size: 15, weight: FontWeight.w500, color: AppColors.inkFaint),
+          filled: true,
+          fillColor: AppColors.violetLight,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      actions: [
+        AppButton(
+          label: _busy ? 'Creating…' : 'Create deck',
+          bg: AppColors.violet,
+          shadow: AppColors.shadowSm,
+          onTap: _busy ? null : _submit,
+        ),
+      ],
+    );
   }
 }

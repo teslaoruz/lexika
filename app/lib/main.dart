@@ -18,7 +18,9 @@ class LexikaApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Gate: while restoring a saved session → splash; then app shell or sign-in.
     final auth = ref.watch(authControllerProvider);
-    final Widget home = auth.loading
+    // Only the initial session-restore shows the splash. An in-flight login
+    // keeps AuthScreen mounted so its spinner + error banner can render.
+    final Widget home = auth.initializing
         ? const Scaffold(
             backgroundColor: AppColors.bg,
             body: Center(child: Text('📖', style: TextStyle(fontSize: 48))),

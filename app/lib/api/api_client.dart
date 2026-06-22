@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io' show Platform, SocketException;
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
@@ -79,16 +79,21 @@ class ApiClient {
     }
   }
 
-  /// Turns a raw transport failure into something a user can act on. A
-  /// SocketException almost always means the configured host isn't reachable
-  /// from this device (the classic localhost-on-a-phone mistake).
+  /// Turns a raw transport failure into a plain-language reason. Real HTTP
+  /// statuses are already rethrown as ApiException upstream, so anything that
+  /// lands here is a connectivity failure: SocketException (mobile),
+  /// TimeoutException (slow/dead host), or http ClientException "Failed to
+  /// fetch" (web). All mean the same thing to the user.
   String _reachMessage(Object e) {
-    if (e is SocketException) {
-      return "Can't reach the server at $baseUrl. "
-          "Check it's running and reachable from this device "
-          "(on a phone, pass --dart-define=API_BASE=http://<LAN-IP>:8000).";
-    }
-    return "Couldn't reach the server: $e";
+    // ponytail: dev detail (baseUrl, dart-define hint) lives in the comment/
+    // network tab, not the user-facing string.
+    assert(() {
+      // ignore: avoid_print
+      print('Network failure hitting $baseUrl: $e');
+      return true;
+    }());
+    return 'No internet connection, or the server is not responding. '
+        'Please check your connection and try again.';
   }
 
   Future<dynamic> _post(Uri url, Map<String, dynamic> body) async {
@@ -129,6 +134,20 @@ class ApiClient {
   Future<Map<String, dynamic>> me() async =>
       (await _get(_u('/auth/me')) as Map).cast<String, dynamic>();
 
+  /// Update editable profile fields. Only non-null args are sent (and changed).
+  Future<Map<String, dynamic>> updateProfile(
+          {String? displayName,
+          String? nativeLanguage,
+          String? currentLevel,
+          String? avatar}) async =>
+      (await _post(_u('/auth/profile'), {
+        'display_name': ?displayName,
+        'native_language': ?nativeLanguage,
+        'current_level': ?currentLevel,
+        'avatar': ?avatar,
+      }) as Map)
+          .cast<String, dynamic>();
+
   Future<Map<String, dynamic>> login(String email, String password) async =>
       (await _post(_u('/auth/login'), {'email': email, 'password': password})
               as Map)
@@ -151,8 +170,19 @@ class ApiClient {
         .toList();
   }
 
+  Future<Deck> createDeck(String name) async => Deck.fromJson(
+      await _post(_u('/decks'), {'name': name}) as Map<String, dynamic>);
+
   Future<void> addCard(int deckId, int wordId) =>
       _post(_u('/decks/$deckId/cards'), {'word_id': wordId});
+
+  /// Autocomplete: headword prefix suggestions for the search box.
+  /// `GET /words/suggest?q=<prefix>` → `["aberration", ...]`.
+  Future<List<String>> suggest(String query, {int limit = 8}) async {
+    if (query.trim().isEmpty) return const [];
+    final j = await _get(_u('/words/suggest', {'q': query, 'limit': limit}));
+    return (j as List).map((e) => e.toString()).toList();
+  }
 
   Future<List<ReviewCard>> due({int limit = 20}) async {
     final j = await _get(_u('/review/due', {'limit': limit}));

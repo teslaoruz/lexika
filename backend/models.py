@@ -31,6 +31,8 @@ class User(Base):
     token: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     native_language: Mapped[str | None] = mapped_column(String, nullable=True)
     current_level: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Pre-set emoji avatar the student picks (not an uploaded image).
+    avatar: Mapped[str | None] = mapped_column(String, nullable=True)
     # Phase 7: the class/cohort this student joined (null = not in a class).
     cohort_id: Mapped[int | None] = mapped_column(ForeignKey("cohorts.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

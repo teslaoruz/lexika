@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'features/decks/decks_screen.dart';
 import 'features/lookup/lookup_screen.dart';
+import 'features/profile/profile_screen.dart';
 import 'features/progress/progress_screen.dart';
 import 'theme/app_colors.dart';
 import 'widgets/bottom_nav.dart';
 import 'widgets/fade_up.dart';
-import 'widgets/mode_tabs.dart';
 import 'widgets/top_bar.dart';
 
-/// App frame: top bar + sliding-pill mode tabs + screen + bottom nav, all kept
-/// in sync via a single [_index] (prototype's tab/nav sync behavior).
+/// App frame: top bar + screen + bottom nav, kept in sync via a single [_index].
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
@@ -21,10 +20,12 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _index = 0;
 
+  // Index → screen, 1:1 with the bottom nav items.
   static const _screens = [
     LookupScreen(),
     DecksScreen(),
     ProgressScreen(),
+    ProfileScreen(),
   ];
 
   void _select(int i) {
@@ -44,7 +45,6 @@ class _AppShellState extends State<AppShell> {
             child: Column(
               children: [
                 const TopBar(),
-                ModeTabs(index: _index, onChanged: _select),
                 Expanded(
                   child: FadeUp(
                     key: ValueKey(_index),

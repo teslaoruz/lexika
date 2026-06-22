@@ -20,13 +20,34 @@ CORS: allow all origins (dev only).
 ### POST /auth/login  body `{"email","password"}`
 401 on bad credentials. Rotates the token. → same shape as register.
 ### GET /auth/me  → the current user object (requires bearer token).
+### POST /auth/profile  body `{"display_name"?,"native_language"?,"avatar"?,"current_level"?}`
+Updates only the fields sent (non-null) → returns the updated user object. `avatar`
+is a pre-set emoji string chosen client-side (not an upload). The user object now
+also carries `avatar`. Translations are generated for `native_language` ∈ {ru, kk, fa}.
 
 ## Words
 
+### GET /words/suggest?q={prefix}&limit=8
+Autocomplete. Returns a JSON **array of headword strings** prefix-matching `q`
+(case-insensitive), ordered by `frequency_rank` (nulls last) then alphabetically,
+capped at `limit` (default 8, max 20). Sources `word_metadata` unioned with cached
+`words`. Blank/whitespace `q` → `[]`. Open (no auth), like `/words/lookup`.
+```json
+["aberration", "aberrant"]
+```
+
 ### GET /words/lookup?word={w}
 Cache check (`words` table) → on miss, Free Dictionary API (api.dictionaryapi.dev) →
-join `word_metadata` for cefr/academic → write cache → return.
+join `word_metadata` for cefr/academic → **enrich** (see below) → write cache → return.
 404 if the word isn't a real word (dictionary API 404).
+
+Enrichment on cache miss (best-effort, never blocks the lookup): `example_en` and
+`synonyms`/`antonyms` come from the Dictionary API response; if synonyms/antonyms are
+thin or `cefr_level` is unknown, Datamuse (api.datamuse.com, keyless) fills them —
+synonyms via `rel_syn`/`rel_ant`, a CEFR estimate from word frequency (`md=f`), and a
+word family from stem-filtered `rel_trg`/`sp=word*`. The CEFR estimate is persisted to
+`word_metadata` and the derived family to `word_family` (relation_type `"related"`), so
+repeat lookups and `/relations` are cheap. ponytail heuristics — see lookup.py.
 
 ```json
 {
@@ -51,8 +72,10 @@ deep-translator on lookup. Add a language by appending its ISO code to
 `backfill_translations.py` for already-cached rows.
 
 ### GET /words/{word}/relations
-synonyms/antonyms from cached dictionary response; word_family + nominalization from
-the curated `word_family` table (empty arrays / null if not seeded — never invent).
+synonyms/antonyms from the cached word row (Dictionary API + Datamuse enrichment);
+`word_family` from the curated `word_family` table — curated POS rows (noun_form/
+verb_form/...) carry their `pos`, enrichment-derived rows carry `pos: "related"`.
+`nominalization` only comes from curated rows (null if not seeded — never invented).
 
 ```json
 {

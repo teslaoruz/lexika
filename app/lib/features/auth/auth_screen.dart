@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/app_chip.dart';
 
 /// Sign-in / register gate. Email + password; register also picks a native
 /// language (drives the translation extra). ponytail: one screen, a bool toggle
@@ -69,6 +70,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           backgroundColor: AppColors.mintDark,
         ));
     } on ApiException catch (e) {
+      // Wrong credentials: clear the password so the user retypes it cleanly.
+      _password.clear();
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
       // Defensive: never fail silently, even on an unexpected error type.
@@ -98,7 +101,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       textAlign: TextAlign.center,
                       style: AppTheme.baloo(size: 30, weight: FontWeight.w800)),
                   const SizedBox(height: 6),
-                  Text(_register ? 'Create your account' : 'Welcome back',
+                  Text(
+                      _register
+                          ? 'Build a vocabulary that sticks'
+                          : 'Welcome back',
                       textAlign: TextAlign.center,
                       style: AppTheme.quick(
                           size: 15, color: AppColors.inkSoft)),
@@ -108,18 +114,45 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   _field(_password, 'Password', TextInputType.text,
                       obscure: true),
                   if (_register) ...[
+                    const SizedBox(height: 6),
+                    Text('At least 8 characters',
+                        style: AppTheme.quick(
+                            size: 12, color: AppColors.inkFaint)),
                     const SizedBox(height: 12),
                     _field(_name, 'Name (shown on leaderboards)',
                         TextInputType.name),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     _langPicker(),
                   ],
                   if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(_error!,
-                        textAlign: TextAlign.center,
-                        style: AppTheme.quick(
-                            size: 13.5, color: AppColors.coralDark)),
+                    const SizedBox(height: 14),
+                    // Filled banner, not thin text — an auth error must be
+                    // impossible to miss.
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.coralLight,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.error_outline,
+                              size: 18, color: AppColors.coralDark),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(_error!,
+                                style: AppTheme.quick(
+                                    size: 13.5,
+                                    weight: FontWeight.w600,
+                                    height: 1.35,
+                                    color: AppColors.coralDark)),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 20),
                   // Spinner overlays the button while a request is in flight so
@@ -205,22 +238,30 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         ),
       );
 
-  Widget _langPicker() => Row(
+  // Branded segmented picker instead of a bare grey Material dropdown — tap a
+  // pill, no menu. Translations use this language.
+  Widget _langPicker() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Native language',
+          Text('I speak',
               style: AppTheme.quick(size: 13.5, color: AppColors.inkSoft)),
-          const Spacer(),
-          DropdownButton<String>(
-            value: _lang,
-            underline: const SizedBox.shrink(),
-            borderRadius: BorderRadius.circular(14),
-            style: AppTheme.quick(size: 14.5, color: AppColors.ink),
-            items: const [
-              DropdownMenuItem(value: 'ru', child: Text('Русский')),
-              DropdownMenuItem(value: 'kk', child: Text('Қазақша')),
-            ],
-            onChanged: (v) => setState(() => _lang = v ?? 'ru'),
-          ),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            _langChip('ru', 'Русский'),
+            _langChip('kk', 'Қазақша'),
+            _langChip('fa', 'فارسی'),
+          ]),
         ],
       );
+
+  Widget _langChip(String value, String label) {
+    final selected = _lang == value;
+    return AppChip(
+      label: label,
+      useBaloo: true,
+      bg: selected ? AppColors.violet : AppColors.bgSoft,
+      fg: selected ? AppColors.white : AppColors.inkSoft,
+      onTap: () => setState(() => _lang = value),
+    );
+  }
 }

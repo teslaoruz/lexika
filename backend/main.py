@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.orm import Session
 
 from db import engine, Base, get_db
@@ -37,6 +37,10 @@ LEARNED_REPS = 2
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
+    # ponytail: tiny idempotent migration — create_all won't add a column to an
+    # existing table. One ALTER beats pulling in Alembic for a single field.
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar VARCHAR"))
     yield
 
 
@@ -61,6 +65,7 @@ def _user_out(u: User) -> dict:
         "display_name": u.display_name,
         "native_language": u.native_language,
         "current_level": u.current_level,
+        "avatar": u.avatar,
     }
 
 
@@ -138,6 +143,31 @@ def me(user: User = Depends(current_user)):
     return _user_out(user)
 
 
+class ProfileUpdate(BaseModel):
+    display_name: str | None = None
+    native_language: str | None = None
+    current_level: str | None = None
+    avatar: str | None = None
+
+
+@app.post("/auth/profile")
+def update_profile(body: ProfileUpdate, user: User = Depends(current_user),
+                   db: Session = Depends(get_db)):
+    # Only fields explicitly sent (non-null) are changed. ponytail: POST not
+    # PATCH so the Flutter client reuses its existing _post helper.
+    if body.display_name is not None:
+        user.display_name = body.display_name.strip() or None
+    if body.native_language is not None:
+        user.native_language = body.native_language
+    if body.current_level is not None:
+        user.current_level = body.current_level
+    if body.avatar is not None:
+        user.avatar = body.avatar
+    db.commit()
+    db.refresh(user)
+    return _user_out(user)
+
+
 # ---------------------------------------------------------------- serializers
 def word_to_lookup(w: Word) -> dict:
     return {
@@ -166,6 +196,35 @@ def lookup(word: str = Query(...), db: Session = Depends(get_db)):
     return word_to_lookup(w)
 
 
+@app.get("/words/suggest")
+def suggest(q: str = Query(""), limit: int = Query(8, ge=1, le=20), db: Session = Depends(get_db)):
+    """Autocomplete: headword strings prefix-matching `q` (case-insensitive),
+    ordered by frequency_rank then alphabetically. Open like /words/lookup.
+    Sources word_metadata (the headword catalogue) unioned with cached words,
+    so words a user has already looked up also autocomplete."""
+    prefix = q.strip().lower()
+    if not prefix:
+        return []
+    like = prefix + "%"
+    # left-join cached frequency onto the metadata catalogue, union cached-only words
+    rows = db.execute(
+        select(models.WordMetadata.word, models.WordMetadata.frequency_rank)
+        .where(func.lower(models.WordMetadata.word).like(like))
+        .union(
+            select(Word.headword, models.WordMetadata.frequency_rank)
+            .outerjoin(models.WordMetadata, models.WordMetadata.word == Word.headword)
+            .where(func.lower(Word.headword).like(like))
+        )
+    ).all()
+    # dedupe, then rank by frequency_rank (None last) then alphabetically
+    best: dict[str, int | None] = {}
+    for word, rank in rows:
+        if word not in best or (rank is not None and (best[word] is None or rank < best[word])):
+            best[word] = rank
+    ordered = sorted(best, key=lambda w: (best[w] is None, best[w] if best[w] is not None else 0, w))
+    return ordered[:limit]
+
+
 # POS shorthand for the relations payload (build-plan uses adj/adv/noun/verb)
 _REL_POS = {
     "noun_form": "noun", "verb_form": "verb",
@@ -184,10 +243,12 @@ def relations(word: str, db: Session = Depends(get_db)):
         select(WordFamily).where(WordFamily.base_word == headword)
     ).all()
 
+    # Curated POS rows (noun_form/verb_form/...) keep their POS; enrichment rows
+    # written by lookup.py carry relation_type "related" with no known POS.
     word_family = [
         {"word": r.related_word, "pos": _REL_POS.get(r.relation_type, r.relation_type)}
         for r in fam_rows
-        if r.relation_type in _REL_POS
+        if r.relation_type in _REL_POS or r.relation_type == "related"
     ]
 
     # Nominalization: the noun_form row, paired with a base example sentence.

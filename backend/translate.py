@@ -18,7 +18,7 @@ log = logging.getLogger("lexika.translate")
 
 # Languages auto-translated on each new lookup. Add "fa" (Persian), "tr", "ar"…
 # GoogleTranslator accepts ISO 639-1 codes; a bad code just yields None.
-TARGET_LANGS = ["ru", "kk"]
+TARGET_LANGS = ["ru", "kk", "fa"]
 
 
 def translate(text: str, target: str) -> str | None:

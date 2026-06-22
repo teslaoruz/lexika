@@ -16,9 +16,15 @@ final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
 /// screen. The token lives on [ApiClient]; this just drives the gate + UI.
 /// The token is persisted via shared_preferences and restored on launch.
 class AuthState {
+  /// A login/register request is in flight (drives the button spinner).
   final bool loading;
+
+  /// Restoring a saved session on launch — the only state that should show the
+  /// full-screen splash. Interactive login must NOT replace AuthScreen, or its
+  /// local error state is torn down and failures show nothing.
+  final bool initializing;
   final Map<String, dynamic>? user;
-  const AuthState({this.loading = false, this.user});
+  const AuthState({this.loading = false, this.initializing = false, this.user});
   bool get signedIn => user != null;
 }
 
@@ -27,8 +33,8 @@ const _tokenKey = 'lexika_token';
 class AuthController extends Notifier<AuthState> {
   @override
   AuthState build() {
-    _restore(); // starts loading=true, resolves to signed in/out
-    return const AuthState(loading: true);
+    _restore(); // starts initializing=true, resolves to signed in/out
+    return const AuthState(initializing: true);
   }
 
   /// Restore a saved session on launch: load the token, validate it via
@@ -74,6 +80,17 @@ class AuthController extends Notifier<AuthState> {
       state = const AuthState();
       rethrow;
     }
+  }
+
+  /// Edit profile fields and reflect the result in [state] so the UI (and the
+  /// native-language default for translations) updates immediately.
+  Future<void> updateProfile(
+      {String? displayName, String? nativeLanguage, String? avatar}) async {
+    final updated = await ref.read(apiClientProvider).updateProfile(
+        displayName: displayName,
+        nativeLanguage: nativeLanguage,
+        avatar: avatar);
+    state = AuthState(user: updated.cast<String, dynamic>());
   }
 
   Future<void> logout() async {
