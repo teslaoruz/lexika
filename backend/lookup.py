@@ -155,6 +155,31 @@ def _parse_dict_response(headword: str, data: list) -> dict:
     }
 
 
+def fetch_examples(raw_word: str, limit: int = 8) -> list[str]:
+    """All example sentences for a word from the Dictionary API, deduped.
+    Best-effort: returns [] on any failure (never raises)."""
+    headword = raw_word.strip().lower()
+    if not headword:
+        return []
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(DICT_API.format(word=headword))
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+    except Exception:
+        return []
+    out, seen = [], set()
+    for entry in data:
+        for meaning in entry.get("meanings", []):
+            for d in meaning.get("definitions", []):
+                ex = d.get("example")
+                if ex and ex not in seen:
+                    seen.add(ex)
+                    out.append(ex)
+    return out[:limit]
+
+
 def get_or_fetch_word(db: Session, raw_word: str, client: httpx.Client | None = None) -> Word:
     """Return a cached Word, fetching + caching from the Dictionary API on miss.
     Raises WordNotFound if the dictionary API 404s (not a real word)."""

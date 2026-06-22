@@ -17,14 +17,14 @@ class AppTheme {
   static TextStyle baloo({
     double size = 16,
     FontWeight weight = FontWeight.w700,
-    Color color = AppColors.ink,
+    Color? color,
     double? height,
     double? letterSpacing,
   }) =>
       GoogleFonts.baloo2(
         fontSize: size,
         fontWeight: weight,
-        color: color,
+        color: color ?? AppColors.ink,
         height: height,
         letterSpacing: letterSpacing,
       );
@@ -33,13 +33,13 @@ class AppTheme {
   static TextStyle quick({
     double size = 16,
     FontWeight weight = FontWeight.w600,
-    Color color = AppColors.ink,
+    Color? color,
     double? height,
   }) =>
       GoogleFonts.quicksand(
         fontSize: size,
         fontWeight: weight,
-        color: color,
+        color: color ?? AppColors.ink,
         height: height,
       );
 
@@ -51,6 +51,7 @@ class AppTheme {
         seedColor: AppColors.violet,
         primary: AppColors.coral,
         surface: AppColors.white,
+        brightness: AppColors.dark ? Brightness.dark : Brightness.light,
       ),
       textTheme: GoogleFonts.quicksandTextTheme(),
       splashFactory: NoSplash.splashFactory,

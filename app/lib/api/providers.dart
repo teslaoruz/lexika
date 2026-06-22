@@ -112,6 +112,31 @@ class AuthController extends Notifier<AuthState> {
 final authControllerProvider =
     NotifierProvider<AuthController, AuthState>(AuthController.new);
 
+const _darkKey = 'lexika_dark';
+
+/// Dark-mode toggle, persisted across launches. The root reads this to set
+/// [AppColors.dark] and the MaterialApp brightness before building.
+class ThemeModeController extends Notifier<bool> {
+  @override
+  bool build() {
+    _restore();
+    return false;
+  }
+
+  Future<void> _restore() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool(_darkKey) ?? false;
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    (await SharedPreferences.getInstance()).setBool(_darkKey, state);
+  }
+}
+
+final themeModeProvider =
+    NotifierProvider<ThemeModeController, bool>(ThemeModeController.new);
+
 /// Recent search chips (client-side only for now).
 final recentSearchesProvider =
     StateProvider<List<String>>((ref) => List.of(Demo.recent));

@@ -9,8 +9,8 @@ class AppChip extends StatelessWidget {
   const AppChip({
     super.key,
     required this.label,
-    this.bg = AppColors.white,
-    this.fg = AppColors.inkSoft,
+    this.bg,
+    this.fg,
     this.onTap,
     this.fontSize = 13,
     this.shadow = const [],
@@ -19,8 +19,8 @@ class AppChip extends StatelessWidget {
   });
 
   final String label;
-  final Color bg;
-  final Color fg;
+  final Color? bg;
+  final Color? fg;
   final VoidCallback? onTap;
   final double fontSize;
   final List<BoxShadow> shadow;
@@ -29,6 +29,8 @@ class AppChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bg = this.bg ?? AppColors.white;
+    final fg = this.fg ?? AppColors.inkSoft;
     final style = useBaloo
         ? AppTheme.baloo(size: fontSize, weight: FontWeight.w700, color: fg)
         : AppTheme.quick(size: fontSize, weight: FontWeight.w600, color: fg);

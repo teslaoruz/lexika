@@ -154,7 +154,7 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
                             horizontal: 18, vertical: 13),
                         child: Row(
                           children: [
-                            const Icon(Icons.north_west_rounded,
+                            Icon(Icons.north_west_rounded,
                                 size: 15, color: AppColors.inkFaint),
                             const SizedBox(width: 10),
                             Expanded(

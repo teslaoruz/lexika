@@ -157,7 +157,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         ),
         child: SafeArea(
           child: due.when(
-            loading: () => const Center(
+            loading: () => Center(
                 child: CircularProgressIndicator(color: AppColors.white)),
             error: (_, _) => _message('Could not load words'),
             data: (cards) => _content(cards),
@@ -270,7 +270,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             radius: 12,
             tint: AppColors.white,
             opacity: 0.18,
-            child: const SizedBox(
+            child: SizedBox(
               width: 36,
               height: 36,
               child: Icon(Icons.close_rounded, size: 18, color: AppColors.white),

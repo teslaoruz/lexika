@@ -12,8 +12,8 @@ class AppButton extends StatelessWidget {
     required this.label,
     this.onTap,
     this.icon,
-    this.bg = AppColors.coral,
-    this.fg = AppColors.white,
+    this.bg,
+    this.fg,
     this.shadow = AppColors.shadowCoral,
     this.expand = true,
     this.radius = 18,
@@ -22,14 +22,16 @@ class AppButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
   final IconData? icon;
-  final Color bg;
-  final Color fg;
+  final Color? bg;
+  final Color? fg;
   final List<BoxShadow> shadow;
   final bool expand;
   final double radius;
 
   @override
   Widget build(BuildContext context) {
+    final bg = this.bg ?? AppColors.coral;
+    final fg = this.fg ?? AppColors.white;
     final content = Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,

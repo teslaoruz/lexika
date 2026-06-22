@@ -37,7 +37,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         ),
         child: SafeArea(
           child: due.when(
-            loading: () => const Center(
+            loading: () => Center(
                 child: CircularProgressIndicator(color: AppColors.white)),
             error: (_, _) => _message('Could not load cards'),
             data: (cards) {
@@ -111,7 +111,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
               radius: 12,
               tint: AppColors.white,
               opacity: 0.18,
-              child: const SizedBox(
+              child: SizedBox(
                 width: 36,
                 height: 36,
                 child: Icon(Icons.close_rounded,

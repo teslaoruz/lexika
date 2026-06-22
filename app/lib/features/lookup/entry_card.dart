@@ -35,6 +35,8 @@ class _EntryCardState extends ConsumerState<EntryCard> {
   String? _lang; // selected extra-translation language code (null if none)
   bool _saved = false;
   bool _saving = false;
+  bool _loadingExamples = false;
+  List<String>? _extraExamples;
 
   /// Available translation languages for this word, stable order.
   List<String> get _langs => widget.entry.translations.keys.toList()..sort();
@@ -103,7 +105,51 @@ class _EntryCardState extends ConsumerState<EntryCard> {
           ),
           RelationsPanel(
               relations: widget.relations, onLookup: widget.onLookup),
+          _extraExamplesSection(),
           _actions(),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _loadMoreExamples() async {
+    if (_loadingExamples) return;
+    setState(() => _loadingExamples = true);
+    try {
+      final ex =
+          await ref.read(apiClientProvider).examples(widget.entry.headword);
+      if (!mounted) return;
+      setState(() {
+        _extraExamples = ex;
+        _loadingExamples = false;
+      });
+      if (ex.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No more examples found')));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingExamples = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not load examples')));
+    }
+  }
+
+  Widget _extraExamplesSection() {
+    final ex = _extraExamples;
+    if (ex == null || ex.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionLabel('More examples'),
+          ...ex.map((s) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text('“$s”',
+                    style: AppTheme.quick(
+                        size: 14, height: 1.4, color: AppColors.inkSoft)),
+              )),
         ],
       ),
     );
@@ -115,7 +161,7 @@ class _EntryCardState extends ConsumerState<EntryCard> {
         Container(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(24, 28, 100, 20),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -265,12 +311,12 @@ class _EntryCardState extends ConsumerState<EntryCard> {
         children: [
           Expanded(
             child: AppButton(
-              label: 'More examples',
-              icon: Icons.nightlight_round,
+              label: _loadingExamples ? 'Loading…' : 'More examples',
+              icon: Icons.menu_book_rounded,
               bg: AppColors.bgSoft,
               fg: AppColors.inkSoft,
               shadow: const [],
-              onTap: () {},
+              onTap: _loadingExamples ? null : _loadMoreExamples,
             ),
           ),
           const SizedBox(width: 10),

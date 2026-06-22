@@ -11,7 +11,7 @@ class AppCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(16),
     this.radius = 22,
-    this.color = AppColors.white,
+    this.color,
     this.shadow = AppColors.shadowSm,
     this.onTap,
     this.gradient,
@@ -21,7 +21,7 @@ class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
   final double radius;
-  final Color color;
+  final Color? color;
   final List<BoxShadow> shadow;
   final VoidCallback? onTap;
   final Gradient? gradient;
@@ -32,7 +32,7 @@ class AppCard extends StatelessWidget {
     final box = Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: gradient == null ? color : null,
+        color: gradient == null ? (color ?? AppColors.white) : null,
         gradient: gradient,
         borderRadius: BorderRadius.circular(radius),
         boxShadow: shadow,

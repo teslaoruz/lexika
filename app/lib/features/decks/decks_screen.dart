@@ -276,10 +276,10 @@ class DecksScreen extends ConsumerWidget {
 
   (Color, Color) _deckColors(Deck d) {
     // Cycle the palette by deck id, mirroring the prototype's varied icons.
-    const palette = [
+    final palette = [
       (AppColors.amberLight, AppColors.amberDark),
       (AppColors.mintLight, AppColors.mintDark),
-      (AppColors.skyLight, Color(0xFF0288A8)),
+      (AppColors.skyLight, const Color(0xFF0288A8)),
       (AppColors.pinkLight, AppColors.antText),
     ];
     return palette[d.id % palette.length];

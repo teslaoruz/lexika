@@ -158,6 +158,12 @@ class ApiClient {
     return WordEntry.fromJson(j as Map<String, dynamic>);
   }
 
+  /// Extra example sentences for a word. `[]` when none are available.
+  Future<List<String>> examples(String word) async {
+    final j = await _get(_u('/words/${Uri.encodeComponent(word)}/examples'));
+    return (j as List).map((e) => e.toString()).toList();
+  }
+
   Future<WordRelations> relations(String word) async {
     final j = await _get(_u('/words/${Uri.encodeComponent(word)}/relations'));
     return WordRelations.fromJson(j as Map<String, dynamic>);

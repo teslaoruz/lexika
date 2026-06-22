@@ -23,7 +23,7 @@ from models import (
     User, Word, WordFamily, Deck, DeckCard, CardProgress, ReviewLog, UserStats,
     Cohort,
 )
-from lookup import get_or_fetch_word, WordNotFound
+from lookup import get_or_fetch_word, WordNotFound, fetch_examples
 from auth import current_user, hash_password, verify_password, new_token
 import sm2
 import gamify
@@ -194,6 +194,12 @@ def lookup(word: str = Query(...), db: Session = Depends(get_db)):
     except WordNotFound:
         raise HTTPException(status_code=404, detail=f"'{word}' is not a real word")
     return word_to_lookup(w)
+
+
+@app.get("/words/{word}/examples")
+def word_examples(word: str):
+    """Extra example sentences for a word (Dictionary API). `[]` if none."""
+    return fetch_examples(word)
 
 
 @app.get("/words/suggest")

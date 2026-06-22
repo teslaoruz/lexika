@@ -62,6 +62,23 @@ class ProfileScreen extends ConsumerWidget {
           data: _tiles,
         ),
         const SizedBox(height: 24),
+        AppCard(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+          child: Row(
+            children: [
+              Text('🌙  Dark mode',
+                  style: AppTheme.baloo(size: 15, weight: FontWeight.w700)),
+              const Spacer(),
+              Switch(
+                value: ref.watch(themeModeProvider),
+                activeThumbColor: AppColors.violet,
+                onChanged: (_) =>
+                    ref.read(themeModeProvider.notifier).toggle(),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
         AppButton(
           label: 'Log out',
           icon: Icons.logout_rounded,
