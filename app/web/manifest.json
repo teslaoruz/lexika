@@ -1,11 +1,11 @@
 {
-    "name": "lexika",
-    "short_name": "lexika",
+    "name": "Lexika",
+    "short_name": "Lexika",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#6C5CE7",
     "theme_color": "#6C5CE7",
-    "description": "A new Flutter project.",
+    "description": "Learn English vocabulary with lookups, decks, and games.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

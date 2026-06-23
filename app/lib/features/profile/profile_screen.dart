@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../api/api_client.dart';
 import '../../api/models.dart';
@@ -78,6 +80,13 @@ class ProfileScreen extends ConsumerWidget {
             ],
           ),
         ),
+        // Only meaningful in the browser — the native app is already installed.
+        if (kIsWeb) ...[
+          const SizedBox(height: 24),
+          const SectionLabel('Get the app'),
+          const SizedBox(height: 10),
+          _getAppCard(),
+        ],
         const SizedBox(height: 12),
         AppButton(
           label: 'Log out',
@@ -88,6 +97,40 @@ class ProfileScreen extends ConsumerWidget {
       ],
     );
   }
+
+  /// APK download + iOS "add to home screen" hint (web only).
+  static const _apkUrl =
+      'https://github.com/teslaoruz/lexika/releases/latest/download/lexika.apk';
+
+  Widget _getAppCard() => AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('📲  Install Lexika',
+                style: AppTheme.baloo(size: 15, weight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            AppButton(
+              label: 'Download for Android (APK)',
+              icon: Icons.android_rounded,
+              bg: AppColors.mint,
+              shadow: AppColors.shadowMint,
+              onTap: () => launchUrl(Uri.parse(_apkUrl),
+                  webOnlyWindowName: '_blank'),
+            ),
+            const SizedBox(height: 14),
+            Text('On iPhone or iPad',
+                style: AppTheme.baloo(
+                    size: 13, weight: FontWeight.w700, color: AppColors.inkSoft)),
+            const SizedBox(height: 4),
+            Text(
+              'Open this site in Safari, tap the Share button, then '
+              '“Add to Home Screen” to install it like an app.',
+              style: AppTheme.quick(
+                  size: 13, height: 1.5, color: AppColors.inkFaint),
+            ),
+          ],
+        ),
+      );
 
   Widget _header(String name, String email, String? language, String? level,
       String? avatar) {
