@@ -283,3 +283,9 @@ final cohortStudentsProvider =
     FutureProvider.autoDispose<List<StudentProgress>>((ref) async {
   return ref.watch(apiClientProvider).cohortStudents();
 });
+
+/// All classes the current user teaches (created). Drives the multi-class
+/// teacher section.
+final teachingClassesProvider = FutureProvider<List<Cohort>>((ref) async {
+  return ref.watch(apiClientProvider).teachingClasses();
+});

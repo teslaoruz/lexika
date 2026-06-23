@@ -316,6 +316,23 @@ class ApiClient {
         .toList();
   }
 
+  /// All classes the current user created (teaches). A teacher can own several.
+  Future<List<Cohort>> teachingClasses() async {
+    final j = await _get(_u('/cohort/teaching')) as Map<String, dynamic>;
+    return ((j['classes'] as List?) ?? [])
+        .map((e) => Cohort.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Teacher: push a deck to every student in the class. Returns how many
+  /// students received it and how many words.
+  Future<({int sentTo, int words})> sendDeckToClass(
+      int deckId, int cohortId) async {
+    final j = await _post(_u('/cohort/send_deck'),
+        {'deck_id': deckId, 'cohort_id': cohortId}) as Map;
+    return (sentTo: (j['sent_to'] ?? 0) as int, words: (j['words'] ?? 0) as int);
+  }
+
   Future<List<LeaderboardEntry>> leaderboard() async {
     final j = await _get(_u('/leaderboard')) as Map<String, dynamic>;
     return ((j['entries'] as List?) ?? [])

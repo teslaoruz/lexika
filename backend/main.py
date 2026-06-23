@@ -786,6 +786,17 @@ def my_cohort(user: User = Depends(current_user), db: Session = Depends(get_db))
     return {"cohort": _cohort_out(c, _member_count(db, c.id), user.id) if c else None}
 
 
+@app.get("/cohort/teaching")
+def cohort_teaching(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """All classes this user created (teaches). A teacher can own several."""
+    cohorts = db.scalars(
+        select(Cohort).where(Cohort.created_by == user.id).order_by(Cohort.id)
+    ).all()
+    return {
+        "classes": [_cohort_out(c, _member_count(db, c.id), user.id) for c in cohorts]
+    }
+
+
 @app.get("/leaderboard")
 def leaderboard(days: int = Query(7, ge=1, le=365), user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Weekly XP ranking scoped to the user's cohort. ponytail: weekly XP is
@@ -820,12 +831,13 @@ def leaderboard(days: int = Query(7, ge=1, le=365), user: User = Depends(current
 
 
 @app.get("/cohort/students")
-def cohort_students(days: int = Query(7, ge=1, le=365), user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Teacher view: per-student progress across the teacher's own class.
-    Only the cohort's creator may call it. ponytail: reuses the leaderboard's
-    weekly-XP recompute and the /stats counters; no new tables, no roles system
-    beyond cohort.created_by == teacher."""
-    c = db.get(Cohort, user.cohort_id) if user.cohort_id else None
+def cohort_students(days: int = Query(7, ge=1, le=365), cohort_id: int | None = Query(None), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Teacher view: per-student progress for one class the teacher owns.
+    Pass `cohort_id` to pick which class (defaults to the teacher's active one).
+    ponytail: reuses the leaderboard's weekly-XP recompute and the /stats
+    counters; no new tables, no roles beyond cohort.created_by == teacher."""
+    c = db.get(Cohort, cohort_id if cohort_id is not None else user.cohort_id) \
+        if (cohort_id is not None or user.cohort_id) else None
     if not c or c.created_by != user.id:
         raise HTTPException(403, "only the class teacher can view students")
 
@@ -867,3 +879,53 @@ def cohort_students(days: int = Query(7, ge=1, le=365), user: User = Depends(cur
     ]
     students.sort(key=lambda s: s["weekly_xp"], reverse=True)
     return {"cohort": _cohort_out(c, len(members), user.id), "students": students}
+
+
+class SendDeck(BaseModel):
+    deck_id: int
+    cohort_id: int | None = None
+
+
+@app.post("/cohort/send_deck")
+def send_deck(body: SendDeck, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Teacher pushes one of their decks to every student in a class they own.
+    Pass `cohort_id` to choose which class (defaults to the active one). Each
+    student gets a deck of the same name (reused if they already have one) with
+    the same words, reviewable immediately."""
+    c = db.get(Cohort, body.cohort_id if body.cohort_id is not None else user.cohort_id) \
+        if (body.cohort_id is not None or user.cohort_id) else None
+    if not c or c.created_by != user.id:
+        raise HTTPException(403, "only the class teacher can send decks")
+    deck = db.get(Deck, body.deck_id)
+    if not deck or deck.user_id != user.id:
+        raise HTTPException(404, "deck not found")
+
+    word_ids = db.scalars(
+        select(DeckCard.word_id).where(DeckCard.deck_id == deck.id)
+    ).all()
+    students = db.scalars(
+        select(User).where(User.cohort_id == c.id, User.id != user.id)
+    ).all()
+
+    for s in students:
+        # reuse a same-named deck if the student already has one
+        target = db.scalar(
+            select(Deck).where(Deck.user_id == s.id, Deck.name == deck.name)
+        )
+        if not target:
+            target = Deck(user_id=s.id, name=deck.name)
+            db.add(target)
+            db.flush()
+        existing = set(db.scalars(
+            select(DeckCard.word_id).where(DeckCard.deck_id == target.id)
+        ).all())
+        for wid in word_ids:
+            if wid in existing:
+                continue
+            db.add(DeckCard(deck_id=target.id, word_id=wid))
+            has_prog = db.scalar(select(CardProgress.id).where(
+                CardProgress.user_id == s.id, CardProgress.word_id == wid))
+            if not has_prog:
+                db.add(CardProgress(user_id=s.id, word_id=wid, next_review_at=now()))
+    db.commit()
+    return {"sent_to": len(students), "words": len(word_ids)}

@@ -8,6 +8,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/bounce_press.dart';
 import '../../widgets/section_label.dart';
 
 /// Phase 7 "Class" module on the Progress screen: join/create a class, then the
@@ -39,6 +40,7 @@ class _ClassModuleState extends ConsumerState<ClassModule> {
       ref.invalidate(cohortProvider);
       ref.invalidate(leaderboardProvider);
       ref.invalidate(cohortStudentsProvider);
+      ref.invalidate(teachingClassesProvider);
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -73,8 +75,212 @@ class _ClassModuleState extends ConsumerState<ClassModule> {
           ),
           data: (c) => c == null ? _joinOrCreate() : _joined(c),
         ),
+        _teachingSection(),
       ],
     );
+  }
+
+  /// Multi-class teacher area: every class the user created, each with its join
+  /// code, a "send a deck" action, and a button to create another class.
+  Widget _teachingSection() {
+    final teaching = ref.watch(teachingClassesProvider);
+    return teaching.maybeWhen(
+      data: (classes) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 20),
+          SectionLabel(classes.isEmpty ? 'Teaching' : 'Classes you teach'),
+          const SizedBox(height: 10),
+          for (final c in classes) ...[
+            _teachingCard(c),
+            const SizedBox(height: 10),
+          ],
+          AppButton(
+            label: classes.isEmpty ? 'Create a class' : 'Create another class',
+            icon: Icons.add_rounded,
+            bg: AppColors.violet,
+            shadow: AppColors.shadowViolet,
+            onTap: _busy ? null : _createClass,
+          ),
+        ],
+      ),
+      orElse: () => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _teachingCard(Cohort c) => AppCard(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(c.name,
+                          style: AppTheme.baloo(
+                              size: 16, weight: FontWeight.w700)),
+                      Text('${c.memberCount} member${c.memberCount == 1 ? '' : 's'}',
+                          style: AppTheme.quick(
+                              size: 12, color: AppColors.inkSoft)),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('CODE',
+                        style: AppTheme.quick(
+                            size: 10,
+                            weight: FontWeight.w700,
+                            color: AppColors.inkFaint)),
+                    SelectableText(c.joinCode,
+                        style: AppTheme.baloo(
+                            size: 16,
+                            weight: FontWeight.w800,
+                            color: AppColors.violet,
+                            letterSpacing: 1.5)),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            AppButton(
+              label: 'Send a deck to this class',
+              icon: Icons.send_rounded,
+              bg: AppColors.mint,
+              shadow: AppColors.shadowMint,
+              onTap: _busy ? null : () => _sendDeck(c),
+            ),
+          ],
+        ),
+      );
+
+  Future<void> _createClass() async {
+    final name = await _promptName('New class', 'Class name');
+    if (name == null || name.isEmpty) return;
+    await _act((api) => api.createCohort(name));
+  }
+
+  Future<void> _sendDeck(Cohort c) async {
+    final api = ref.read(apiClientProvider);
+    List<Deck> decks;
+    try {
+      decks = (await api.decks()).where((d) => !d.isSystemDeck).toList();
+    } on ApiException catch (e) {
+      _snack(e.message);
+      return;
+    }
+    if (!mounted) return;
+    if (decks.isEmpty) {
+      _snack('Make a deck first, then send it to your class.');
+      return;
+    }
+    final deck = await showModalBottomSheet<Deck>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                child: Text('Send which deck to “${c.name}”?',
+                    style: AppTheme.baloo(size: 17, weight: FontWeight.w700)),
+              ),
+              for (final d in decks)
+                BouncePress(
+                  onTap: () => Navigator.of(ctx).pop(d),
+                  pressedScale: 0.98,
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.bgSoft,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.folder_rounded,
+                            size: 18, color: AppColors.violet),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(d.name,
+                              style: AppTheme.baloo(
+                                  size: 15, weight: FontWeight.w700)),
+                        ),
+                        Text('${d.cardCount}',
+                            style: AppTheme.quick(
+                                size: 13, color: AppColors.inkFaint)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (deck == null || !mounted) return;
+    try {
+      final r = await api.sendDeckToClass(deck.id, c.id);
+      ref.invalidate(teachingClassesProvider);
+      _snack('Sent “${deck.name}” to ${r.sentTo} '
+          'student${r.sentTo == 1 ? '' : 's'}.');
+    } on ApiException catch (e) {
+      _snack(e.message);
+    }
+  }
+
+  Future<String?> _promptName(String title, String hint) {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text(title,
+            style: AppTheme.baloo(size: 18, weight: FontWeight.w700)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+          decoration: InputDecoration(
+            hintText: hint,
+            filled: true,
+            fillColor: AppColors.bgSoft,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          AppButton(
+            label: 'Create',
+            bg: AppColors.violet,
+            onTap: () => Navigator.of(ctx).pop(ctrl.text.trim()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _snack(String m) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    }
   }
 
   Widget _joinOrCreate() => AppCard(
