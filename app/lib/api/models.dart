@@ -306,6 +306,28 @@ class LevelAccuracy {
       );
 }
 
+/// A word saved in a deck (deck-detail row).
+class DeckWord {
+  final int wordId;
+  final String headword;
+  final String? definitionEn;
+  final String? cefrLevel;
+
+  const DeckWord({
+    required this.wordId,
+    required this.headword,
+    this.definitionEn,
+    this.cefrLevel,
+  });
+
+  factory DeckWord.fromJson(Map<String, dynamic> j) => DeckWord(
+        wordId: (j['word_id'] ?? 0) as int,
+        headword: (j['headword'] ?? '') as String,
+        definitionEn: j['definition_en'] as String?,
+        cefrLevel: j['cefr_level'] as String?,
+      );
+}
+
 List<String> _strList(dynamic v) =>
     (v as List?)?.map((e) => e.toString()).toList() ?? const [];
 

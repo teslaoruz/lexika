@@ -76,6 +76,7 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currentWord = ref.watch(currentWordProvider).trim();
     final lookup = ref.watch(lookupProvider);
     final relations = ref.watch(relationsProvider);
     final recents = ref.watch(recentSearchesProvider);
@@ -191,9 +192,11 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
         // Entry.
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-          child: lookup.when(
+          child: currentWord.isEmpty
+              ? const _SearchPrompt()
+              : lookup.when(
             loading: () => const _LoadingCard(),
-            error: (e, _) => _ErrorCard(word: ref.read(currentWordProvider)),
+            error: (e, _) => _ErrorCard(word: currentWord),
             data: (entry) => FadeUp(
               key: ValueKey(entry.headword),
               child: EntryCard(
@@ -211,6 +214,37 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
       ],
     );
   }
+}
+
+class _SearchPrompt extends StatelessWidget {
+  const _SearchPrompt();
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: AppColors.shadowMd,
+        ),
+        child: Column(
+          children: [
+            const Text('🔍', style: TextStyle(fontSize: 40)),
+            const SizedBox(height: 12),
+            Text('Search any English word',
+                style: AppTheme.baloo(size: 17, weight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            Text(
+              'See its definition, examples, synonyms and a translation in your language.',
+              textAlign: TextAlign.center,
+              style: AppTheme.quick(
+                  size: 13.5,
+                  weight: FontWeight.w500,
+                  height: 1.5,
+                  color: AppColors.inkFaint),
+            ),
+          ],
+        ),
+      );
 }
 
 class _LoadingCard extends StatelessWidget {
@@ -248,7 +282,7 @@ class _ErrorCard extends StatelessWidget {
                     AppTheme.baloo(size: 17, weight: FontWeight.w700)),
             const SizedBox(height: 6),
             Text(
-              "Check the spelling, or the server may be offline. Try \"ubiquitous\" for the demo.",
+              "Check the spelling, or the server may be offline.",
               textAlign: TextAlign.center,
               style: AppTheme.quick(
                   size: 13.5,

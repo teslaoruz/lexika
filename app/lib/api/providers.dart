@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
-import 'demo_data.dart';
 import 'models.dart';
 
 /// Minimal Riverpod surface: one client, a few async providers that fall back
@@ -137,95 +136,74 @@ class ThemeModeController extends Notifier<bool> {
 final themeModeProvider =
     NotifierProvider<ThemeModeController, bool>(ThemeModeController.new);
 
-/// Recent search chips (client-side only for now).
-final recentSearchesProvider =
-    StateProvider<List<String>>((ref) => List.of(Demo.recent));
+/// Recent search chips (client-side only, this session).
+final recentSearchesProvider = StateProvider<List<String>>((ref) => []);
 
-/// The word currently shown on the Look up screen.
-final currentWordProvider = StateProvider<String>((ref) => 'ubiquitous');
+/// The word currently shown on the Look up screen ('' = nothing searched yet).
+final currentWordProvider = StateProvider<String>((ref) => '');
 
-/// Lookup result for [currentWordProvider]. Falls back to demo content if the
-/// server can't be reached (so the prototype still renders).
+/// Lookup result for [currentWordProvider]. No demo fallback — real data or a
+/// real error/empty state. Empty word short-circuits (the screen shows a prompt).
 final lookupProvider = FutureProvider.autoDispose<WordEntry>((ref) async {
-  final word = ref.watch(currentWordProvider);
-  final api = ref.watch(apiClientProvider);
-  try {
-    return await api.lookup(word);
-  } on ApiException {
-    if (word == 'ubiquitous') return Demo.ubiquitous;
-    rethrow; // real 404 / other word with no server -> show error state
-  }
+  final word = ref.watch(currentWordProvider).trim();
+  if (word.isEmpty) throw ApiException('');
+  return ref.watch(apiClientProvider).lookup(word);
 });
 
 final relationsProvider =
     FutureProvider.autoDispose<WordRelations>((ref) async {
-  final word = ref.watch(currentWordProvider);
+  final word = ref.watch(currentWordProvider).trim();
+  if (word.isEmpty) return const WordRelations();
   final api = ref.watch(apiClientProvider);
   try {
     return await api.relations(word);
   } on ApiException {
-    if (word == 'ubiquitous') return Demo.ubiquitousRelations;
-    return const WordRelations();
+    return const WordRelations(); // secondary content — empty, never blocks
   }
 });
 
 final decksProvider = FutureProvider.autoDispose<List<Deck>>((ref) async {
-  final api = ref.watch(apiClientProvider);
-  try {
-    return await api.decks();
-  } on ApiException {
-    return Demo.decks;
-  }
+  return ref.watch(apiClientProvider).decks();
+});
+
+/// Words in a single deck (deck-detail view).
+final deckCardsProvider =
+    FutureProvider.autoDispose.family<List<DeckWord>, int>((ref, deckId) async {
+  return ref.watch(apiClientProvider).deckCards(deckId);
 });
 
 /// Gamification totals (streak/XP/words). Not autoDispose — the top bar always
-/// wants it. Demo fallback keeps the prototype's 12-day streak when offline.
+/// wants it. Zeroed on error (neutral, not fake) so the bar never breaks.
 final statsProvider = FutureProvider<UserStats>((ref) async {
   final api = ref.watch(apiClientProvider);
   try {
     return await api.stats();
   } on ApiException {
     return const UserStats(
-        currentStreak: 12, longestStreak: 21, totalXp: 1840, totalWordsLearned: 87);
+        currentStreak: 0, longestStreak: 0, totalXp: 0, totalWordsLearned: 0);
   }
 });
 
 /// Accuracy by CEFR level for the Progress chart. Empty/all-null is a valid
-/// state (nothing reviewed yet). No demo fallback — it's real and user-specific.
+/// state (nothing reviewed yet).
 final accuracyByLevelProvider =
     FutureProvider<List<LevelAccuracy>>((ref) async {
   return ref.watch(apiClientProvider).accuracyByLevel();
 });
 
-final dueCardsProvider = FutureProvider.autoDispose<List<ReviewCard>>((ref) async {
-  final api = ref.watch(apiClientProvider);
-  try {
-    final cards = await api.due();
-    return cards.isEmpty ? Demo.due : cards;
-  } on ApiException {
-    return Demo.due;
-  }
+final dueCardsProvider =
+    FutureProvider.autoDispose<List<ReviewCard>>((ref) async {
+  return ref.watch(apiClientProvider).due();
 });
 
-/// Phase 5: words the learner struggles with (low SM-2 ease) and words to try
-/// next. Empty list is a valid, expected state (nothing weak yet / all started).
+/// Phase 5: weak words / words to try next. Empty list is a valid state.
 final weakWordsProvider = FutureProvider.autoDispose<List<WordTip>>((ref) async {
-  final api = ref.watch(apiClientProvider);
-  try {
-    return await api.weakWords();
-  } on ApiException {
-    return Demo.weakWords;
-  }
+  return ref.watch(apiClientProvider).weakWords();
 });
 
 final suggestedWordsProvider =
     FutureProvider.autoDispose<List<WordTip>>((ref) async {
-  final api = ref.watch(apiClientProvider);
-  try {
-    return await api.suggested();
-  } on ApiException {
-    return Demo.suggestedWords;
-  }
+  return ref.watch(apiClientProvider).suggested();
 });
 
 /// Phase 7: the user's class (null = not joined) and its weekly leaderboard.

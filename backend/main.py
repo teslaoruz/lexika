@@ -361,6 +361,29 @@ def add_card(deck_id: int, body: CardAdd, user: User = Depends(current_user), db
     return {"ok": True}
 
 
+@app.get("/decks/{deck_id}/cards")
+def deck_cards(deck_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Words saved in a deck (newest first), for the deck-detail view."""
+    deck = db.get(Deck, deck_id)
+    if not deck or (deck.user_id is not None and deck.user_id != user.id):
+        raise HTTPException(404, "deck not found")
+    rows = db.scalars(
+        select(Word)
+        .join(DeckCard, DeckCard.word_id == Word.id)
+        .where(DeckCard.deck_id == deck_id)
+        .order_by(DeckCard.id.desc())
+    ).all()
+    return [
+        {
+            "word_id": w.id,
+            "headword": w.headword,
+            "definition_en": w.definition_en,
+            "cefr_level": w.cefr_level,
+        }
+        for w in rows
+    ]
+
+
 # ------------------------------------------------------------------- /review
 @app.get("/review/due")
 def review_due(limit: int = Query(20, ge=1, le=200), user: User = Depends(current_user), db: Session = Depends(get_db)):

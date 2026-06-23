@@ -9,6 +9,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/bounce_press.dart';
+import 'deck_detail_screen.dart';
 import '../../widgets/empty_state.dart';
 import '../games/games_screen.dart';
 import '../review/review_screen.dart';
@@ -189,7 +190,9 @@ class DecksScreen extends ConsumerWidget {
     final initials = _initials(d.name);
     final (bg, fg) = _deckColors(d);
     return AppCard(
-      onTap: () => _openReview(context),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => DeckDetailScreen(deck: d)),
+      ),
       radius: 22,
       child: Row(
         children: [

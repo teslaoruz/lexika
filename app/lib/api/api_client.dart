@@ -182,6 +182,13 @@ class ApiClient {
   Future<void> addCard(int deckId, int wordId) =>
       _post(_u('/decks/$deckId/cards'), {'word_id': wordId});
 
+  Future<List<DeckWord>> deckCards(int deckId) async {
+    final j = await _get(_u('/decks/$deckId/cards'));
+    return (j as List)
+        .map((e) => DeckWord.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Autocomplete: headword prefix suggestions for the search box.
   /// `GET /words/suggest?q=<prefix>` → `["aberration", ...]`.
   Future<List<String>> suggest(String query, {int limit = 8}) async {
