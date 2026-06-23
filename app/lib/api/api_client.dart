@@ -213,6 +213,11 @@ class ApiClient {
   Future<void> addCard(int deckId, int wordId) =>
       _post(_u('/decks/$deckId/cards'), {'word_id': wordId});
 
+  /// Copy a shared deck (by id) into a new deck for the current user.
+  Future<Deck> importDeck(int deckId) async => Deck.fromJson(
+      await _post(_u('/decks/import'), {'deck_id': deckId})
+          as Map<String, dynamic>);
+
   Future<List<DeckWord>> deckCards(int deckId) async {
     final j = await _get(_u('/decks/$deckId/cards'));
     return (j as List)

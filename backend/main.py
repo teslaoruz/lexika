@@ -372,6 +372,37 @@ def delete_deck(deck_id: int, user: User = Depends(current_user), db: Session = 
     db.commit()
 
 
+class DeckImport(BaseModel):
+    deck_id: int
+
+
+@app.post("/decks/import", status_code=201)
+def import_deck(body: DeckImport, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Copy a shared deck's words into a new deck for the current user (used by
+    QR deck-sharing). ponytail: words aren't private, so any deck id can be
+    imported — no share-token table."""
+    src = db.get(Deck, body.deck_id)
+    if not src:
+        raise HTTPException(404, "deck not found")
+    word_ids = db.scalars(
+        select(DeckCard.word_id).where(DeckCard.deck_id == src.id)
+    ).all()
+    nd = Deck(user_id=user.id, name=src.name)
+    db.add(nd)
+    db.flush()
+    for wid in word_ids:
+        db.add(DeckCard(deck_id=nd.id, word_id=wid))
+        if not db.scalar(select(CardProgress.id).where(
+                CardProgress.user_id == user.id, CardProgress.word_id == wid)):
+            db.add(CardProgress(user_id=user.id, word_id=wid, next_review_at=now()))
+    db.commit()
+    db.refresh(nd)
+    return {
+        "id": nd.id, "name": nd.name, "card_count": len(word_ids),
+        "due_count": len(word_ids), "is_system_deck": False,
+    }
+
+
 class CardAdd(BaseModel):
     word_id: int
 

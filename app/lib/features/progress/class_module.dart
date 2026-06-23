@@ -10,6 +10,7 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/bounce_press.dart';
 import '../../widgets/section_label.dart';
+import '../share/qr_share.dart';
 
 /// Phase 7 "Class" module on the Progress screen: join/create a class, then the
 /// weekly leaderboard scoped to its members. ponytail: one widget, no new nav
@@ -147,12 +148,35 @@ class _ClassModuleState extends ConsumerState<ClassModule> {
               ],
             ),
             const SizedBox(height: 12),
-            AppButton(
-              label: 'Send a deck to this class',
-              icon: Icons.send_rounded,
-              bg: AppColors.mint,
-              shadow: AppColors.shadowMint,
-              onTap: _busy ? null : () => _sendDeck(c),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    label: 'Send a deck',
+                    icon: Icons.send_rounded,
+                    bg: AppColors.mint,
+                    shadow: AppColors.shadowMint,
+                    onTap: _busy ? null : () => _sendDeck(c),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AppButton(
+                    label: 'Join QR',
+                    icon: Icons.qr_code_rounded,
+                    bg: AppColors.violet,
+                    shadow: AppColors.shadowViolet,
+                    onTap: () => showQrDialog(
+                      context,
+                      data: classQrData(c.joinCode),
+                      title: 'Join “${c.name}”',
+                      subtitle:
+                          'Students scan this in Lexika to join — or enter '
+                          'code ${c.joinCode}.',
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -294,13 +318,27 @@ class _ClassModuleState extends ConsumerState<ClassModule> {
             const SizedBox(height: 10),
             Row(children: [
               Expanded(child: _field(_code, 'CODE', caps: true)),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               AppButton(
                 label: 'Join',
                 expand: false,
                 onTap: _busy
                     ? null
                     : () => _act((api) => api.joinCohort(_code.text.trim())),
+              ),
+              const SizedBox(width: 8),
+              BouncePress(
+                onTap: () => openScanner(context),
+                pressedScale: 0.9,
+                child: Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: AppColors.mintLight,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.qr_code_scanner_rounded,
+                      size: 20, color: AppColors.mintDark),
+                ),
               ),
             ]),
             const Padding(

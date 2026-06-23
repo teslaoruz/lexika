@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Required for the app to reach the backend API over the network. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Camera: scanning deck-share / class-join QR codes. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <application
         android:label="lexika"
         android:name="${applicationName}"

@@ -9,6 +9,7 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
 import '../lookup/word_detail_screen.dart';
 import '../review/review_screen.dart';
+import '../share/qr_share.dart';
 
 /// Lists the words saved in a single deck and lets you practise just that deck.
 /// Reachable by tapping a deck on the Decks screen — this is where a
@@ -35,6 +36,18 @@ class DeckDetailScreen extends ConsumerWidget {
         foregroundColor: AppColors.ink,
         title: Text(deck.name,
             style: AppTheme.baloo(size: 18, weight: FontWeight.w800)),
+        actions: [
+          IconButton(
+            tooltip: 'Share deck',
+            icon: const Icon(Icons.qr_code_rounded),
+            onPressed: () => showQrDialog(
+              context,
+              data: deckQrData(deck.id),
+              title: 'Share “${deck.name}”',
+              subtitle: 'Have a classmate scan this in Lexika to get a copy.',
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: cards.when(

@@ -10,6 +10,7 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/bounce_press.dart';
 import 'deck_detail_screen.dart';
+import '../share/qr_share.dart';
 import '../../widgets/empty_state.dart';
 import '../games/games_screen.dart';
 import '../review/review_screen.dart';
@@ -68,22 +69,40 @@ class DecksScreen extends ConsumerWidget {
               children: [
                 Text('Your decks',
                     style: AppTheme.baloo(size: 19, weight: FontWeight.w700)),
-                BouncePress(
-                  onTap: () => _openNewDeck(context, ref),
-                  pressedScale: 0.94,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.violetLight,
-                      borderRadius: BorderRadius.circular(100),
+                Row(
+                  children: [
+                    BouncePress(
+                      onTap: () => openScanner(context),
+                      pressedScale: 0.9,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.mintLight,
+                          borderRadius: BorderRadius.circular(100),
+                        ),
+                        child: const Icon(Icons.qr_code_scanner_rounded,
+                            size: 18, color: AppColors.mintDark),
+                      ),
                     ),
-                    child: Text('+ New deck',
-                        style: AppTheme.baloo(
-                            size: 12.5,
-                            weight: FontWeight.w700,
-                            color: AppColors.violet)),
-                  ),
+                    const SizedBox(width: 8),
+                    BouncePress(
+                      onTap: () => _openNewDeck(context, ref),
+                      pressedScale: 0.94,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.violetLight,
+                          borderRadius: BorderRadius.circular(100),
+                        ),
+                        child: Text('+ New deck',
+                            style: AppTheme.baloo(
+                                size: 12.5,
+                                weight: FontWeight.w700,
+                                color: AppColors.violet)),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
