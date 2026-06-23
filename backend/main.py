@@ -1,10 +1,10 @@
 """Lexika backend — FastAPI app implementing the CONTRACT.md MVP slice.
 
-No auth this slice: every request is the seeded user_id=1.
-Tables are created with create_all on startup.
+Token-bearer auth (see auth.py); tables are created with create_all on startup.
 ponytail: create_all instead of Alembic for this single-dev MVP. Alembic is the
 upgrade path once the schema needs to change against real data.
 """
+import os
 import secrets
 import time
 from collections import defaultdict
@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import select, func, text
 from sqlalchemy.orm import Session
 
@@ -41,13 +41,28 @@ async def lifespan(app: FastAPI):
     # existing table. One ALTER beats pulling in Alembic for a single field.
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar VARCHAR"))
+        # Hot analytical queries (leaderboard, teacher dashboard) scan
+        # review_log by user over a time window, and filter users by cohort.
+        # create_all won't add indexes to existing tables, so do it idempotently.
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_review_log_user_time "
+            "ON review_log (user_id, reviewed_at)"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_users_cohort_id ON users (cohort_id)"))
     yield
 
 
 app = FastAPI(title="Lexika API", lifespan=lifespan)
+# Allowed web origins. Defaults cover local Flutter-web dev; set
+# LEXIKA_ALLOWED_ORIGINS (comma-separated) to your app origin(s) in production.
+# ponytail: env list beats a hardcoded "*" — no new config system needed.
+_origins = os.getenv(
+    "LEXIKA_ALLOWED_ORIGINS",
+    "http://localhost:8080,http://127.0.0.1:8080",
+).split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # dev only
+    allow_origins=[o.strip() for o in _origins if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -88,7 +103,7 @@ def _throttle_check(email: str):
 
 
 class Register(BaseModel):
-    email: str
+    email: EmailStr
     password: str
     display_name: str | None = None
     native_language: str = "ru"
@@ -120,7 +135,7 @@ def register(body: Register, db: Session = Depends(get_db)):
 
 
 class Login(BaseModel):
-    email: str
+    email: EmailStr
     password: str
 
 

@@ -296,6 +296,12 @@ class _EntryCardState extends ConsumerState<EntryCard> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(word,
+                // fa is right-to-left — align/flow accordingly so Persian reads
+                // correctly; ru/kk stay LTR.
+                textDirection:
+                    _effectiveLang == 'fa' ? TextDirection.rtl : TextDirection.ltr,
+                textAlign:
+                    _effectiveLang == 'fa' ? TextAlign.right : TextAlign.left,
                 style: AppTheme.baloo(
                     size: 15, weight: FontWeight.w700, color: AppColors.inkSoft)),
           ),
