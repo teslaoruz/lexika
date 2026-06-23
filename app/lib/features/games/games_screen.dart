@@ -87,7 +87,18 @@ class GamesSection extends StatelessWidget {
     );
   }
 
-  void _open(BuildContext context, GameType t) {
+  Future<void> _open(BuildContext context, GameType t) async {
+    // Pick what to practise first.
+    final source =
+        await showModalBottomSheet<FutureProvider<List<ReviewCard>>>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => const _GameSourceSheet(),
+    );
+    if (source == null || !context.mounted) return;
     Navigator.of(context).push(PageRouteBuilder(
       opaque: false,
       barrierColor: Colors.transparent,
@@ -97,10 +108,82 @@ class GamesSection extends StatelessWidget {
         child: SlideTransition(
           position: Tween(begin: const Offset(0, 0.04), end: Offset.zero)
               .animate(CurvedAnimation(parent: a, curve: kEaseSmooth)),
-          child: GameScreen(type: t),
+          child: GameScreen(type: t, cards: source),
         ),
       ),
     ));
+  }
+}
+
+/// Bottom sheet to choose what a game practises: all words, weak words, due
+/// words, or a specific deck. Pops the chosen card-source provider.
+class _GameSourceSheet extends ConsumerWidget {
+  const _GameSourceSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final decks = ref.watch(decksProvider);
+    Widget tile(String emoji, String label,
+            FutureProvider<List<ReviewCard>> source) =>
+        BouncePress(
+          onTap: () => Navigator.of(context).pop(source),
+          pressedScale: 0.98,
+          child: Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.bgSoft,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 18)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(label,
+                      style: AppTheme.baloo(
+                          size: 15,
+                          weight: FontWeight.w700,
+                          color: AppColors.ink)),
+                ),
+              ],
+            ),
+          ),
+        );
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.inkFaint,
+                  borderRadius: BorderRadius.circular(100),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              child: Text('Practise…',
+                  style: AppTheme.baloo(size: 18, weight: FontWeight.w700)),
+            ),
+            tile('📚', 'All my words', allCardsProvider),
+            tile('💪', 'Weak words', weakReviewProvider),
+            tile('⏰', 'Due words', dueCardsProvider),
+            for (final d
+                in (decks.value ?? <Deck>[]).where((d) => !d.isSystemDeck))
+              tile('🗂️', d.name, deckReviewProvider(d.id)),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -117,8 +200,11 @@ String meaningOf(ReviewCard c) {
 
 // ---------------------------------------------------------------- game host
 class GameScreen extends ConsumerStatefulWidget {
-  const GameScreen({super.key, required this.type});
+  const GameScreen({super.key, required this.type, required this.cards});
   final GameType type;
+
+  /// Which pool the game practises (all words / weak / due / a deck).
+  final FutureProvider<List<ReviewCard>> cards;
 
   @override
   ConsumerState<GameScreen> createState() => _GameScreenState();
@@ -144,8 +230,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Games practise the whole vocabulary, not just SM-2 due cards.
-    final due = ref.watch(allCardsProvider);
+    // The pool is chosen by the source picker (all / weak / due / a deck).
+    final due = ref.watch(widget.cards);
     return Material(
       type: MaterialType.transparency,
       child: Container(
