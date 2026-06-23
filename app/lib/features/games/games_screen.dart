@@ -144,7 +144,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final due = ref.watch(dueCardsProvider);
+    // Games practise the whole vocabulary, not just SM-2 due cards.
+    final due = ref.watch(allCardsProvider);
     return Material(
       type: MaterialType.transparency,
       child: Container(
@@ -156,11 +157,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ),
         ),
         child: SafeArea(
-          child: due.when(
-            loading: () => Center(
-                child: CircularProgressIndicator(color: AppColors.onAccent)),
-            error: (_, _) => _message('Could not load words'),
-            data: (cards) => _content(cards),
+          // Shrink above the keyboard so the typing game's field + Check button
+          // stay visible when the keyboard opens.
+          child: AnimatedPadding(
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+            padding:
+                EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+            child: due.when(
+              loading: () => Center(
+                  child: CircularProgressIndicator(color: AppColors.onAccent)),
+              error: (_, _) => _message('Could not load words'),
+              data: (cards) => _content(cards),
+            ),
           ),
         ),
       ),
@@ -586,16 +595,6 @@ class _MatchingBoardState extends State<_MatchingBoard> {
 
   @override
   Widget build(BuildContext context) {
-    Widget col(bool words) => Expanded(
-          child: Column(
-            children: [
-              for (var i = 0; i < widget.cards.length; i++) ...[
-                _cell(words ? i : _meaningOrder[i], words),
-                const SizedBox(height: 10),
-              ],
-            ],
-          ),
-        );
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
       child: Column(
@@ -606,10 +605,28 @@ class _MatchingBoardState extends State<_MatchingBoard> {
                   weight: FontWeight.w600,
                   color: AppColors.onAccent.withValues(alpha: 0.85))),
           const SizedBox(height: 16),
+          // One row per pair so the word box and meaning box share a height
+          // (IntrinsicHeight + stretch) — keeps the two columns aligned even
+          // though meanings are much longer than headwords.
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [col(true), const SizedBox(width: 12), col(false)],
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (var i = 0; i < widget.cards.length; i++) ...[
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(child: _cell(i, true)),
+                          const SizedBox(width: 12),
+                          Expanded(child: _cell(_meaningOrder[i], false)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                ],
+              ),
             ),
           ),
         ],
@@ -646,6 +663,7 @@ class _MatchingBoardState extends State<_MatchingBoard> {
         opacity: matched ? 0.55 : 1,
         child: Container(
           width: double.infinity,
+          alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
           decoration: BoxDecoration(
             color: bg,

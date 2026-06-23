@@ -95,11 +95,20 @@ class DecksScreen extends ConsumerWidget {
                 subtitle:
                     'Look up a word and tap “Save to deck” to start your first one.',
               )
-            else
+            else ...[
               for (final d in list) ...[
-                _deckCard(context, d),
+                _deckCard(context, ref, d),
                 const SizedBox(height: 10),
               ],
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text('Tip: long-press a deck to delete it.',
+                    style: AppTheme.quick(
+                        size: 12,
+                        weight: FontWeight.w500,
+                        color: AppColors.inkFaint)),
+              ),
+            ],
           ],
         );
       },
@@ -186,13 +195,15 @@ class DecksScreen extends ConsumerWidget {
         ),
       );
 
-  Widget _deckCard(BuildContext context, Deck d) {
+  Widget _deckCard(BuildContext context, WidgetRef ref, Deck d) {
     final initials = _initials(d.name);
     final (bg, fg) = _deckColors(d);
     return AppCard(
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => DeckDetailScreen(deck: d)),
       ),
+      // System decks can't be deleted.
+      onLongPress: d.isSystemDeck ? null : () => _confirmDelete(context, ref, d),
       radius: 22,
       child: Row(
         children: [
@@ -267,6 +278,51 @@ class DecksScreen extends ConsumerWidget {
     showDialog<void>(
       context: context,
       builder: (_) => _NewDeckDialog(ref: ref),
+    );
+  }
+
+  void _confirmDelete(BuildContext context, WidgetRef ref, Deck d) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text('Delete “${d.name}”?',
+            style: AppTheme.baloo(size: 18, weight: FontWeight.w700)),
+        content: Text(
+            'This removes the deck and its ${d.cardCount} saved '
+            'word${d.cardCount == 1 ? '' : 's'}. Your review progress is kept.',
+            style: AppTheme.quick(size: 14, height: 1.5, color: AppColors.inkSoft)),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel',
+                style: AppTheme.baloo(
+                    size: 14,
+                    weight: FontWeight.w700,
+                    color: AppColors.inkSoft)),
+          ),
+          AppButton(
+            label: 'Delete',
+            bg: AppColors.coral,
+            shadow: AppColors.shadowCoral,
+            expand: false,
+            onTap: () async {
+              Navigator.of(ctx).pop();
+              try {
+                await ref.read(apiClientProvider).deleteDeck(d.id);
+                ref.invalidate(decksProvider);
+              } on ApiException catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text(e.message)));
+                }
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 

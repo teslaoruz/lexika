@@ -95,10 +95,8 @@ class _ServerGateState extends ConsumerState<ServerGate> {
       case _Status.checking:
         return _Splash(
           emoji: '☕',
-          title: 'Waking up Lexika…',
-          subtitle:
-              'The server sleeps when idle to keep hosting free — the first '
-              'load can take up to a minute. Hang tight.',
+          title: 'Getting things ready…',
+          subtitle: 'This will only take a few seconds. Hang tight.',
           showSpinner: true,
         );
       case _Status.down:

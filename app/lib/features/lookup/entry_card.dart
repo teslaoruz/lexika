@@ -188,18 +188,13 @@ class _EntryCardState extends ConsumerState<EntryCard> {
                 ],
               ),
               const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Flexible(
-                    child: Text(e.headword,
-                        style: AppTheme.baloo(
-                            size: 32, weight: FontWeight.w700, height: 1)),
-                  ),
-                  const SizedBox(width: 12),
-                  PlayButton(word: e.headword),
-                ],
-              ),
+              // Word gets the full width (long headwords no longer squeeze the
+              // play button onto a second line); the play button sits below it.
+              Text(e.headword,
+                  style: AppTheme.baloo(
+                      size: 32, weight: FontWeight.w700, height: 1.05)),
+              const SizedBox(height: 12),
+              PlayButton(word: e.headword, size: 46),
               if (e.phonetic != null) ...[
                 const SizedBox(height: 8),
                 Text(e.phonetic!,
@@ -315,27 +310,30 @@ class _EntryCardState extends ConsumerState<EntryCard> {
   }
 
   Widget _actions() {
+    // Already-in-a-deck? Reflect it on the button instead of "Save to deck".
+    final id = widget.entry.id;
+    final alreadySaved = _saved ||
+        (id != null && ref.watch(wordSavedProvider(id)).value == true);
+    // Full-width stacked buttons — side-by-side clipped the labels on narrow
+    // phones ("Save to deck" / "More examples").
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 18, 24, 26),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: AppButton(
-              label: _loadingExamples ? 'Loading…' : 'More examples',
-              icon: Icons.menu_book_rounded,
-              bg: AppColors.bgSoft,
-              fg: AppColors.inkSoft,
-              shadow: const [],
-              onTap: _loadingExamples ? null : _loadMoreExamples,
-            ),
+          // Save button: pops to mint + "Saved!" once the card is persisted.
+          _SavePopButton(
+            saved: alreadySaved,
+            saving: _saving,
+            onTap: _onSaveTapped,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            // Save button: pops to mint + "Saved!" once the card is persisted.
-            child: _SavePopButton(
-              saved: _saved,
-              onTap: _onSaveTapped,
-            ),
+          const SizedBox(height: 10),
+          AppButton(
+            label: _loadingExamples ? 'Loading…' : 'More examples',
+            icon: Icons.menu_book_rounded,
+            bg: AppColors.bgSoft,
+            fg: AppColors.inkSoft,
+            shadow: const [],
+            onTap: _loadingExamples ? null : _loadMoreExamples,
           ),
         ],
       ),
@@ -350,20 +348,29 @@ class _EntryCardState extends ConsumerState<EntryCard> {
       return;
     }
 
+    setState(() => _saving = true); // immediate feedback while we fetch + save
+
     final decks = await _loadDecks();
-    if (decks == null || !mounted) return; // load failed (snack already shown)
+    if (decks == null || !mounted) {
+      if (mounted) setState(() => _saving = false);
+      return; // load failed (snack already shown)
+    }
 
     // Smart default: a single non-system deck saves without the picker.
     final saveable = decks.where((d) => !d.isSystemDeck).toList();
     final Deck? deck = saveable.length == 1
         ? saveable.first
-        : await _pickDeck(decks);
-    if (deck == null || !mounted) return; // dismissed picker
+        : await _pickDeck(saveable);
+    if (deck == null || !mounted) {
+      if (mounted) setState(() => _saving = false);
+      return; // dismissed picker
+    }
 
-    setState(() => _saving = true);
     try {
       await ref.read(apiClientProvider).addCard(deck.id, wordId);
       ref.invalidate(decksProvider);
+      ref.invalidate(wordSavedProvider(wordId));
+      ref.invalidate(deckCardsProvider(deck.id));
       if (!mounted) return;
       setState(() {
         _saving = false;
@@ -413,9 +420,41 @@ class _EntryCardState extends ConsumerState<EntryCard> {
               const SizedBox(height: 16),
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 8),
-                child: Text('Save to deck',
+                child: Text(decks.isEmpty ? 'Create your first deck' : 'Save to deck',
                     style:
                         AppTheme.baloo(size: 18, weight: FontWeight.w700)),
+              ),
+              // Always allow making a new deck right here (covers the first-word
+              // case when no decks exist yet).
+              BouncePress(
+                onTap: () async {
+                  final created = await _createDeckInline();
+                  if (created != null && ctx.mounted) {
+                    Navigator.of(ctx).pop(created);
+                  }
+                },
+                pressedScale: 0.98,
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.violetLight,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.add_rounded,
+                          size: 20, color: AppColors.violet),
+                      const SizedBox(width: 12),
+                      Text('New deck',
+                          style: AppTheme.baloo(
+                              size: 15,
+                              weight: FontWeight.w700,
+                              color: AppColors.violet)),
+                    ],
+                  ),
+                ),
               ),
               for (final d in decks)
                 BouncePress(
@@ -457,6 +496,59 @@ class _EntryCardState extends ConsumerState<EntryCard> {
     );
   }
 
+  /// Prompt for a name and create a deck on the spot, returning it (or null if
+  /// cancelled / failed). Used by the save sheet so a word can be saved into a
+  /// brand-new deck without leaving the lookup.
+  Future<Deck?> _createDeckInline() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text('New deck',
+            style: AppTheme.baloo(size: 18, weight: FontWeight.w700)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+          style: AppTheme.quick(size: 15, weight: FontWeight.w600),
+          decoration: InputDecoration(
+            hintText: 'Deck name',
+            filled: true,
+            fillColor: AppColors.violetLight,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          AppButton(
+            label: 'Create deck',
+            bg: AppColors.violet,
+            shadow: AppColors.shadowSm,
+            onTap: () => Navigator.of(ctx).pop(controller.text.trim()),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty) return null;
+    try {
+      final deck = await ref.read(apiClientProvider).createDeck(name);
+      ref.invalidate(decksProvider);
+      return deck;
+    } on ApiException catch (e) {
+      _snack(e.message);
+      return null;
+    }
+  }
+
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -465,8 +557,10 @@ class _EntryCardState extends ConsumerState<EntryCard> {
 
 /// Save button with scale-pop overshoot to 1.08 then settle, recoloring to mint.
 class _SavePopButton extends StatefulWidget {
-  const _SavePopButton({required this.saved, required this.onTap});
+  const _SavePopButton(
+      {required this.saved, required this.saving, required this.onTap});
   final bool saved;
+  final bool saving;
   final VoidCallback onTap;
 
   @override
@@ -496,14 +590,20 @@ class _SavePopButtonState extends State<_SavePopButton>
 
   @override
   Widget build(BuildContext context) {
+    final label = widget.saved
+        ? 'Saved to this deck'
+        : (widget.saving ? 'Saving…' : 'Save to deck');
     return ScaleTransition(
       scale: _pop,
       child: AppButton(
-        label: widget.saved ? 'Saved!' : 'Save to deck',
-        icon: widget.saved ? Icons.check_rounded : Icons.bookmark_outline_rounded,
+        label: label,
+        icon: widget.saved
+            ? Icons.check_rounded
+            : Icons.bookmark_outline_rounded,
         bg: widget.saved ? AppColors.mint : AppColors.coral,
         shadow: widget.saved ? AppColors.shadowMint : AppColors.shadowCoral,
-        onTap: widget.onTap,
+        // Disable taps while saving or already saved.
+        onTap: (widget.saved || widget.saving) ? null : widget.onTap,
       ),
     );
   }

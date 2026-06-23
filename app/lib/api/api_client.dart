@@ -195,6 +195,21 @@ class ApiClient {
   Future<Deck> createDeck(String name) async => Deck.fromJson(
       await _post(_u('/decks'), {'name': name}) as Map<String, dynamic>);
 
+  Future<void> deleteDeck(int deckId) async {
+    try {
+      final res = await _client
+          .delete(_u('/decks/$deckId'), headers: _headers())
+          .timeout(_timeout);
+      if (res.statusCode >= 400) {
+        throw ApiException('Could not delete deck', status: res.statusCode);
+      }
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(_reachMessage(e));
+    }
+  }
+
   Future<void> addCard(int deckId, int wordId) =>
       _post(_u('/decks/$deckId/cards'), {'word_id': wordId});
 
@@ -203,6 +218,12 @@ class ApiClient {
     return (j as List)
         .map((e) => DeckWord.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Whether the current user already has this word saved in a deck.
+  Future<bool> wordSaved(int wordId) async {
+    final j = await _get(_u('/words/$wordId/saved'));
+    return ((j as Map)['saved'] ?? false) as bool;
   }
 
   /// All cards in a deck as review cards (for practising one deck).
@@ -223,6 +244,14 @@ class ApiClient {
 
   Future<List<ReviewCard>> due({int limit = 20}) async {
     final j = await _get(_u('/review/due', {'limit': limit}));
+    return (j as List)
+        .map((e) => ReviewCard.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// All the user's saved words (for games — practice, not spaced repetition).
+  Future<List<ReviewCard>> allCards({int limit = 50}) async {
+    final j = await _get(_u('/review/all', {'limit': limit}));
     return (j as List)
         .map((e) => ReviewCard.fromJson(e as Map<String, dynamic>))
         .toList();

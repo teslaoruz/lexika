@@ -183,6 +183,17 @@ final wordRelationsProvider =
   }
 });
 
+/// Whether a word is already saved in one of the user's decks (drives the
+/// 'Saved to deck' state). Invalidated after a save.
+final wordSavedProvider =
+    FutureProvider.autoDispose.family<bool, int>((ref, wordId) async {
+  try {
+    return await ref.watch(apiClientProvider).wordSaved(wordId);
+  } on ApiException {
+    return false;
+  }
+});
+
 final decksProvider = FutureProvider.autoDispose<List<Deck>>((ref) async {
   return ref.watch(apiClientProvider).decks();
 });
@@ -215,6 +226,13 @@ final accuracyByLevelProvider =
 final dueCardsProvider =
     FutureProvider.autoDispose<List<ReviewCard>>((ref) async {
   return ref.watch(apiClientProvider).due();
+});
+
+/// All the user's saved words — the pool the games practise from (not limited
+/// to SM-2 due cards, so a word stays playable after you get it right).
+final allCardsProvider =
+    FutureProvider.autoDispose<List<ReviewCard>>((ref) async {
+  return ref.watch(apiClientProvider).allCards();
 });
 
 /// All cards in one deck, as review cards — for practising a single deck.

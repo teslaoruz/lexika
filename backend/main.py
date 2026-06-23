@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, delete
 from sqlalchemy.orm import Session
 
 from db import engine, Base, get_db
@@ -360,6 +360,18 @@ def create_deck(body: DeckCreate, user: User = Depends(current_user), db: Sessio
     }
 
 
+@app.delete("/decks/{deck_id}", status_code=204)
+def delete_deck(deck_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Delete one of the user's own decks and its cards. System decks (user_id
+    NULL) can't be deleted. Card progress is left intact (it's per word/user)."""
+    deck = db.get(Deck, deck_id)
+    if not deck or deck.user_id != user.id:
+        raise HTTPException(404, "deck not found")
+    db.execute(delete(DeckCard).where(DeckCard.deck_id == deck_id))
+    db.delete(deck)
+    db.commit()
+
+
 class CardAdd(BaseModel):
     word_id: int
 
@@ -389,6 +401,20 @@ def add_card(deck_id: int, body: CardAdd, user: User = Depends(current_user), db
             db.add(CardProgress(user_id=user.id, word_id=body.word_id, next_review_at=now()))
         db.commit()
     return {"ok": True}
+
+
+@app.get("/words/{word_id}/saved")
+def word_saved(word_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Whether the current user already has this word in any deck — drives the
+    'Saved to deck' state on the lookup card."""
+    exists = db.scalar(
+        select(DeckCard.id)
+        .join(Deck, Deck.id == DeckCard.deck_id)
+        .where(DeckCard.word_id == word_id)
+        .where((Deck.user_id == user.id) | (Deck.user_id.is_(None)))
+        .limit(1)
+    )
+    return {"saved": exists is not None}
 
 
 @app.get("/decks/{deck_id}/cards")
@@ -464,6 +490,32 @@ def review_due(limit: int = Query(20, ge=1, le=200), user: User = Depends(curren
             "audio_url": w.audio_url,
             "definition_en": w.definition_en,  # primary
             "translation": (w.translations or {}).get(lang) if lang else None,  # extra
+            "example_en": w.example_en,
+        }
+        for w, _ in rows
+    ]
+
+
+@app.get("/review/all")
+def review_all(limit: int = Query(50, ge=1, le=200), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Every word the user has saved — for the games, which are practice (not
+    spaced-repetition) and should stay playable regardless of due dates."""
+    rows = db.execute(
+        select(Word, CardProgress)
+        .join(CardProgress, CardProgress.word_id == Word.id)
+        .where(CardProgress.user_id == user.id)
+        .order_by(CardProgress.last_reviewed_at.asc().nullsfirst())
+        .limit(limit)
+    ).all()
+    lang = user.native_language
+    return [
+        {
+            "word_id": w.id,
+            "headword": w.headword,
+            "phonetic": w.phonetic,
+            "audio_url": w.audio_url,
+            "definition_en": w.definition_en,
+            "translation": (w.translations or {}).get(lang) if lang else None,
             "example_en": w.example_en,
         }
         for w, _ in rows

@@ -14,6 +14,7 @@ class AppCard extends StatelessWidget {
     this.color,
     this.shadow = AppColors.shadowSm,
     this.onTap,
+    this.onLongPress,
     this.gradient,
     this.clip = false,
   });
@@ -24,6 +25,7 @@ class AppCard extends StatelessWidget {
   final Color? color;
   final List<BoxShadow> shadow;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final Gradient? gradient;
   final bool clip;
 
@@ -40,7 +42,11 @@ class AppCard extends StatelessWidget {
       clipBehavior: clip ? Clip.antiAlias : Clip.none,
       child: child,
     );
-    if (onTap == null) return box;
-    return BouncePress(onTap: onTap, pressedScale: 0.97, child: box);
+    Widget result =
+        onTap == null ? box : BouncePress(onTap: onTap, pressedScale: 0.97, child: box);
+    if (onLongPress != null) {
+      result = GestureDetector(onLongPress: onLongPress, child: result);
+    }
+    return result;
   }
 }

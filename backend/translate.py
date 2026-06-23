@@ -11,6 +11,7 @@ hit a few hundred times total, then ~never. Translation must never break a looku
 any failure returns None.
 """
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from deep_translator import GoogleTranslator
 
@@ -35,8 +36,13 @@ def translate(text: str, target: str) -> str | None:
 
 
 def translate_all(text: str) -> dict[str, str]:
-    """{lang: translation} for every TARGET_LANGS that succeeds (others omitted)."""
-    return {lang: t for lang in TARGET_LANGS if (t := translate(text, lang))}
+    """{lang: translation} for every TARGET_LANGS that succeeds (others omitted).
+    The per-language calls run concurrently — they're network-bound, so a cold
+    lookup waits ~one call instead of three. ponytail: a thread pool, not an
+    async rewrite of the whole stack."""
+    with ThreadPoolExecutor(max_workers=len(TARGET_LANGS)) as ex:
+        pairs = ex.map(lambda lang: (lang, translate(text, lang)), TARGET_LANGS)
+    return {lang: t for lang, t in pairs if t}
 
 
 def _selfcheck():
