@@ -114,8 +114,11 @@ class ProfileScreen extends ConsumerWidget {
               icon: Icons.android_rounded,
               bg: AppColors.mint,
               shadow: AppColors.shadowMint,
+              // Same-tab navigation: GitHub serves the APK as an attachment so
+              // the page doesn't actually leave, and this dodges popup blockers
+              // that can silently swallow a new-tab open.
               onTap: () => launchUrl(Uri.parse(_apkUrl),
-                  webOnlyWindowName: '_blank'),
+                  webOnlyWindowName: '_self'),
             ),
             const SizedBox(height: 14),
             Text('On iPhone or iPad',
