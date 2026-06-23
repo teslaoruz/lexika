@@ -1,9 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for the app to reach the backend API over the network. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="lexika"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true"><!-- dev: backend is plain http. Remove / use a network-security-config once the API is https. -->
+        android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
             android:exported="true"
