@@ -1,0 +1,20 @@
+# Render Blueprint for the Lexika backend (free tier).
+# Postgres is hosted separately on Neon — set DATABASE_URL in the dashboard.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: lexika-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    # Pick the region closest to your Neon database to keep query latency low.
+    # region: frankfurt
+    envVars:
+      # Neon connection string, e.g. postgresql://user:pass@host/db?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+      # Your Cloudflare Pages URL, e.g. https://lexika.pages.dev
+      - key: LEXIKA_ALLOWED_ORIGINS
+        sync: false

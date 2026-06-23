@@ -113,7 +113,8 @@ restores the session on launch via `/auth/me`.
 ## Deployment
 
 The Flutter web build is static files (host anywhere); the backend is a container
-with a Postgres database. See **Deployment** notes for cheapest hosting options.
+(`backend/Dockerfile`) with a Postgres database. See [`DEPLOYMENT.md`](DEPLOYMENT.md)
+for a free, step-by-step setup (Neon + Render + Cloudflare Pages).
 
 ---
 
