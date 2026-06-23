@@ -72,6 +72,13 @@ def now():
     return datetime.now(timezone.utc)
 
 
+@app.get("/health")
+def health(db: Session = Depends(get_db)):
+    """Liveness + DB readiness probe for hosting platforms."""
+    db.execute(text("SELECT 1"))
+    return {"status": "ok"}
+
+
 # --------------------------------------------------------------------- /auth
 def _user_out(u: User) -> dict:
     return {
