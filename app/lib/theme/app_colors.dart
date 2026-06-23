@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Palette from lexika-prototype.html `:root`, now mode-aware. Colors are
+/// Palette from the original design mockup, now mode-aware. Colors are
 /// getters that resolve against [dark]; flip [dark] (via the theme provider in
 /// main.dart) and rebuild to switch the whole app. ponytail: accents stay the
 /// same in both modes — only the neutrals + pale tints flip, which is what a
