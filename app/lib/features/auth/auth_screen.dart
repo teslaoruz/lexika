@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../api/api_client.dart';
@@ -56,6 +57,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       } else {
         await auth.login(email, pw);
       }
+      // Tell the OS/browser password manager to offer to save the credentials.
+      TextInput.finishAutofillContext();
       // On success the gate (LexikaApp) swaps to the app shell. Flash a quick
       // confirmation first so the tap clearly registered.
       if (!mounted) return;
@@ -93,7 +96,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               padding: const EdgeInsets.all(24),
               radius: 28,
               shadow: AppColors.shadowMd,
-              child: Column(
+              child: AutofillGroup(
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -109,10 +113,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       style: AppTheme.quick(
                           size: 15, color: AppColors.inkSoft)),
                   const SizedBox(height: 20),
-                  _field(_email, 'Email', TextInputType.emailAddress),
+                  _field(_email, 'Email', TextInputType.emailAddress,
+                      hints: const [AutofillHints.username, AutofillHints.email]),
                   const SizedBox(height: 12),
                   _field(_password, 'Password', TextInputType.text,
-                      obscure: true),
+                      obscure: true,
+                      hints: [
+                        _register
+                            ? AutofillHints.newPassword
+                            : AutofillHints.password
+                      ]),
                   if (_register) ...[
                     const SizedBox(height: 6),
                     Text('At least 8 characters',
@@ -208,6 +218,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   ),
                 ],
               ),
+              ),
             ),
           ),
         ),
@@ -216,13 +227,14 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   Widget _field(TextEditingController c, String hint, TextInputType type,
-          {bool obscure = false}) =>
+          {bool obscure = false, List<String>? hints}) =>
       TextField(
         controller: c,
         keyboardType: type,
         obscureText: obscure,
         autocorrect: false,
         enableSuggestions: false,
+        autofillHints: hints,
         style: AppTheme.quick(size: 15),
         onSubmitted: (_) => _submit(),
         decoration: InputDecoration(

@@ -40,8 +40,16 @@ class _EntryCardState extends ConsumerState<EntryCard> {
   bool _loadingExamples = false;
   List<String>? _extraExamples;
 
-  /// Available translation languages for this word, stable order.
-  List<String> get _langs => widget.entry.translations.keys.toList()..sort();
+  /// Translation languages to offer. We show only the user's native language
+  /// (a Russian speaker sees Russian, not Kazakh/Persian too). Falls back to
+  /// whatever translations exist if the native one is missing or unset.
+  List<String> get _langs {
+    final all = widget.entry.translations.keys.toList()..sort();
+    final native =
+        ref.read(authControllerProvider).user?['native_language'] as String?;
+    if (native != null && all.contains(native)) return [native];
+    return all;
+  }
 
   /// Which translation to show: an explicit user pick wins; otherwise default to
   /// the signed-in user's native language (not the alphabetical-first key, which
@@ -222,7 +230,8 @@ class _EntryCardState extends ConsumerState<EntryCard> {
             ],
           ),
         ),
-        if (_langs.isNotEmpty)
+        // Only show the language switcher when there's more than one to pick.
+        if (_langs.length > 1)
           Positioned(top: 20, right: 20, child: _langToggle()),
       ],
     );
