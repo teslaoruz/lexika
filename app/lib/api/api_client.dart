@@ -117,6 +117,18 @@ class ApiClient {
     }
   }
 
+  /// Probe `/health`. Used by the startup gate to detect a sleeping free-tier
+  /// backend (a cold start can take ~30–50s). Uses a long timeout so a *waking*
+  /// server isn't mistaken for a dead one. Returns true only on a 200.
+  Future<bool> ping({Duration timeout = const Duration(seconds: 35)}) async {
+    try {
+      final res = await _client.get(_u('/health')).timeout(timeout);
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Auth (CONTRACT.md /auth). Both return the raw `{token, user}` map; the auth
   /// controller stores the token on this client.
   Future<Map<String, dynamic>> register(String email, String password,

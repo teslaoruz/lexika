@@ -14,10 +14,14 @@ class RelationsPanel extends StatelessWidget {
     super.key,
     required this.relations,
     required this.onLookup,
+    this.loading = false,
   });
 
   final WordRelations relations;
   final void Function(String word) onLookup;
+
+  /// Related words load after the main entry; show a hint while they're fetched.
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -75,7 +79,28 @@ class RelationsPanel extends StatelessWidget {
           last: true));
     }
 
-    if (rows.isEmpty) return const SizedBox.shrink();
+    if (rows.isEmpty) {
+      if (!loading) return const SizedBox.shrink();
+      // Still fetching synonyms/antonyms/word-family — show a small hint so the
+      // section doesn't just look empty.
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 14),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppColors.violet),
+            ),
+            const SizedBox(width: 10),
+            Text('Finding synonyms, antonyms & word family…',
+                style: AppTheme.quick(
+                    size: 13, weight: FontWeight.w600, color: AppColors.inkFaint)),
+          ],
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 4, 24, 8),

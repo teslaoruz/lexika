@@ -178,10 +178,8 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
               key: ValueKey(entry.headword),
               child: EntryCard(
                 entry: entry,
-                relations: relations.maybeWhen(
-                  data: (r) => r,
-                  orElse: () => const WordRelations(),
-                ),
+                relations: relations.value ?? const WordRelations(),
+                relationsLoading: relations.isLoading,
                 onLookup: _lookup,
                 onSave: () {},
               ),

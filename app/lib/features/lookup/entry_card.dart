@@ -20,12 +20,14 @@ class EntryCard extends ConsumerStatefulWidget {
     required this.relations,
     required this.onLookup,
     required this.onSave,
+    this.relationsLoading = false,
   });
 
   final WordEntry entry;
   final WordRelations relations;
   final void Function(String word) onLookup;
   final VoidCallback onSave;
+  final bool relationsLoading;
 
   @override
   ConsumerState<EntryCard> createState() => _EntryCardState();
@@ -104,7 +106,9 @@ class _EntryCardState extends ConsumerState<EntryCard> {
             ),
           ),
           RelationsPanel(
-              relations: widget.relations, onLookup: widget.onLookup),
+              relations: widget.relations,
+              onLookup: widget.onLookup,
+              loading: widget.relationsLoading),
           _extraExamplesSection(),
           _actions(),
         ],
