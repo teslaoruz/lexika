@@ -44,16 +44,21 @@ class AppTheme {
       );
 
   static ThemeData themeData() {
+    final brightness = AppColors.dark ? Brightness.dark : Brightness.light;
+    // Base the text theme on the right brightness so framework-default-styled
+    // text (dialog titles, snackbars, hints) is light-on-dark in dark mode.
+    final base = ThemeData(brightness: brightness);
     return ThemeData(
       useMaterial3: true,
+      brightness: brightness,
       scaffoldBackgroundColor: AppColors.bg,
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.violet,
         primary: AppColors.coral,
         surface: AppColors.white,
-        brightness: AppColors.dark ? Brightness.dark : Brightness.light,
+        brightness: brightness,
       ),
-      textTheme: GoogleFonts.quicksandTextTheme(),
+      textTheme: GoogleFonts.quicksandTextTheme(base.textTheme),
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
     );

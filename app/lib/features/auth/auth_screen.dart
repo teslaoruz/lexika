@@ -64,7 +64,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         ..showSnackBar(SnackBar(
           content: Text(_register ? 'Account created 🎉' : 'Welcome back 👋',
               style: AppTheme.baloo(
-                  size: 14.5, weight: FontWeight.w700, color: AppColors.white)),
+                  size: 14.5, weight: FontWeight.w700, color: AppColors.onAccent)),
           duration: const Duration(milliseconds: 1200),
           behavior: SnackBarBehavior.floating,
           backgroundColor: AppColors.mintDark,
@@ -175,7 +175,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2.5, color: AppColors.white),
+                              strokeWidth: 2.5, color: AppColors.onAccent),
                         ),
                     ],
                   ),
@@ -260,7 +260,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       label: label,
       useBaloo: true,
       bg: selected ? AppColors.violet : AppColors.bgSoft,
-      fg: selected ? AppColors.white : AppColors.inkSoft,
+      fg: selected ? AppColors.onAccent : AppColors.inkSoft,
       onTap: () => setState(() => _lang = value),
     );
   }

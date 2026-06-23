@@ -517,7 +517,7 @@ def review_submit(body: ReviewSubmit, user: User = Depends(current_user), db: Se
     prog.repetitions = new.repetitions
     # interval 0 (again) -> re-show in ~1 min; otherwise schedule out by days
     delay_seconds = 60 if new.interval_days == 0 else new.interval_days * 86400
-    prog.next_review_at = now() + _seconds(delay_seconds)
+    prog.next_review_at = now() + timedelta(seconds=delay_seconds)
     prog.last_result = body.grade
     prog.consecutive_correct = (prog.consecutive_correct + 1) if correct else 0
     prog.total_attempts += 1
@@ -757,7 +757,3 @@ def cohort_students(days: int = Query(7, ge=1, le=365), user: User = Depends(cur
     ]
     students.sort(key=lambda s: s["weekly_xp"], reverse=True)
     return {"cohort": _cohort_out(c, len(members), user.id), "students": students}
-
-
-def _seconds(s: float):
-    return timedelta(seconds=s)

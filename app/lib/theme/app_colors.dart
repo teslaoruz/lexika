@@ -22,6 +22,9 @@ class AppColors {
   // "white" = card/surface colour. Dark mode → an elevated dark surface.
   static Color get white =>
       _p(const Color(0xFFFFFFFF), const Color(0xFF252233));
+  // Ink that sits ON a saturated accent/gradient fill — always white, never
+  // flips. Use this (not [white]) for text/icons over coral/violet/mint/etc.
+  static const onAccent = Color(0xFFFFFFFF);
   static Color get ink => _p(const Color(0xFF2D2A3D), const Color(0xFFF0EEF8));
   static Color get inkSoft =>
       _p(const Color(0xFF6E6B85), const Color(0xFFB6B2CC));

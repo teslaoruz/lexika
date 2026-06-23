@@ -31,7 +31,7 @@ class AppButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = this.bg ?? AppColors.coral;
-    final fg = this.fg ?? AppColors.white;
+    final fg = this.fg ?? AppColors.onAccent;
     final content = Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,

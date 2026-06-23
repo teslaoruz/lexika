@@ -61,7 +61,7 @@ class _PlayButtonState extends State<PlayButton>
             boxShadow: AppColors.shadowCoral,
           ),
           child: Icon(Icons.play_arrow_rounded,
-              color: AppColors.white, size: widget.size * 0.55),
+              color: AppColors.onAccent, size: widget.size * 0.55),
         ),
       ),
     );

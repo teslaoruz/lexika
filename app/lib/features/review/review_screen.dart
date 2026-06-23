@@ -38,7 +38,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         child: SafeArea(
           child: due.when(
             loading: () => Center(
-                child: CircularProgressIndicator(color: AppColors.white)),
+                child: CircularProgressIndicator(color: AppColors.onAccent)),
             error: (_, _) => _message('Could not load cards'),
             data: (cards) {
               if (cards.isEmpty) return _message('Nothing due — nice work! 🎉');
@@ -62,7 +62,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                   style: AppTheme.baloo(
                       size: 20,
                       weight: FontWeight.w700,
-                      color: AppColors.white)),
+                      color: AppColors.onAccent)),
             ),
           ),
         ],
@@ -91,7 +91,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             style: AppTheme.quick(
                 size: 11.5,
                 weight: FontWeight.w600,
-                color: AppColors.white.withValues(alpha: 0.6))),
+                color: AppColors.onAccent.withValues(alpha: 0.6))),
         const SizedBox(height: 6),
         _grades(card),
       ],
@@ -109,13 +109,13 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             pressedScale: 0.88,
             child: GlassSurface(
               radius: 12,
-              tint: AppColors.white,
+              tint: AppColors.onAccent,
               opacity: 0.18,
               child: SizedBox(
                 width: 36,
                 height: 36,
                 child: Icon(Icons.close_rounded,
-                    size: 18, color: AppColors.white),
+                    size: 18, color: AppColors.onAccent),
               ),
             ),
           ),
@@ -124,7 +124,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
               height: 10,
               margin: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: AppColors.white.withValues(alpha: 0.18),
+                color: AppColors.onAccent.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(100),
               ),
               child: Align(
@@ -149,7 +149,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
               style: AppTheme.baloo(
                   size: 13,
                   weight: FontWeight.w700,
-                  color: AppColors.white.withValues(alpha: 0.85))),
+                  color: AppColors.onAccent.withValues(alpha: 0.85))),
         ],
       ),
     );
@@ -189,11 +189,11 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 30),
       child: Row(
         children: [
-          btn('Again', '<1m', 'again', AppColors.coral, AppColors.white),
+          btn('Again', '<1m', 'again', AppColors.coral, AppColors.onAccent),
           const SizedBox(width: 8),
           btn('Hard', '6m', 'hard', AppColors.amber, const Color(0xFF6B4F00)),
           const SizedBox(width: 8),
-          btn('Good', '1d', 'good', AppColors.mint, AppColors.white),
+          btn('Good', '1d', 'good', AppColors.mint, AppColors.onAccent),
           const SizedBox(width: 8),
           btn('Easy', '4d', 'easy', AppColors.sky, const Color(0xFF00425C)),
         ],
@@ -219,7 +219,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         ..showSnackBar(SnackBar(
           content: Text('+$xp XP',
               style: AppTheme.baloo(
-                  size: 15, weight: FontWeight.w700, color: AppColors.white)),
+                  size: 15, weight: FontWeight.w700, color: AppColors.onAccent)),
           duration: const Duration(milliseconds: 900),
           behavior: SnackBarBehavior.floating,
           backgroundColor: AppColors.violet,

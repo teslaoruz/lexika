@@ -4,6 +4,8 @@ Shared by the /words/lookup endpoint and seed.py so demo decks get real data.
 The English definition is the primary content; translations are a cached extra
 (see translate.py) stored in the word's `translations` JSON map.
 """
+from difflib import SequenceMatcher
+
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -134,15 +136,6 @@ def _parse_dict_response(headword: str, data: list) -> dict:
                 synonyms.extend(d.get("synonyms", []))
                 antonyms.extend(d.get("antonyms", []))
 
-    # dedupe, preserve order, cap to keep the payload tidy
-    def uniq(xs):
-        seen, out = set(), []
-        for x in xs:
-            if x not in seen:
-                seen.add(x)
-                out.append(x)
-        return out[:10]
-
     return {
         "headword": headword,
         "phonetic": phonetic,
@@ -150,8 +143,8 @@ def _parse_dict_response(headword: str, data: list) -> dict:
         "part_of_speech": part_of_speech,
         "definition_en": definition_en,
         "example_en": example_en,
-        "synonyms_json": uniq(synonyms),
-        "antonyms_json": uniq(antonyms),
+        "synonyms_json": _dedupe(synonyms),
+        "antonyms_json": _dedupe(antonyms),
     }
 
 
@@ -183,11 +176,14 @@ def fetch_examples(raw_word: str, limit: int = 8) -> list[str]:
 def suggest_spelling(client: httpx.Client, word: str, limit: int = 4) -> list[str]:
     """Closest real words to a (mis)spelling, best first. Datamuse sounds-like
     (`sl=`) first — it catches transpositions like recieve->receive that the
-    spelling pattern (`sp=`) misses — then `sp=` to fill in.
-    ponytail: two best-effort calls, no fuzzy lib; Datamuse does the ranking."""
+    spelling pattern (`sp=`) misses — then `sp=` to fill in. Candidates too far
+    from the input are dropped so gibberish ("qwzxptlm") stays a 404 instead of
+    resolving to some unrelated real word.
+    ponytail: two best-effort calls + difflib ratio gate; no fuzzy lib needed."""
     w = word.strip().lower()
     rows = _datamuse(client, sl=w, max=limit) + _datamuse(client, sp=w, max=limit)
-    return _dedupe([r["word"] for r in rows if r.get("word") != w])
+    cand = _dedupe([r["word"] for r in rows if r.get("word") != w])
+    return [c for c in cand if SequenceMatcher(None, w, c.lower()).ratio() >= 0.6]
 
 
 def get_or_fetch_word(db: Session, raw_word: str, client: httpx.Client | None = None,
@@ -285,9 +281,15 @@ def _selfcheck():
         assert w1.id == w2.id, (w1.id, w2.id)
         assert after == before, f"cache miss on second lookup: {before} -> {after}"
         assert w1.headword == "ubiquitous"
-        # Spelling fallback: a typo resolves to the corrected entry.
+        # Spelling fallback: a typo resolves to the corrected entry, but
+        # gibberish stays a 404 (no bogus nearest-word match).
         typo = get_or_fetch_word(db, "recieve")
         assert typo.headword == "receive", typo.headword
+        try:
+            get_or_fetch_word(db, "qwzxptlmn")
+            assert False, "gibberish should not resolve"
+        except WordNotFound:
+            pass
         print(f"lookup cache self-check: passed (cache hit made {after - before} network calls).")
     finally:
         db.close()

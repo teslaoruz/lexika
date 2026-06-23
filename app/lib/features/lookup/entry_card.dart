@@ -259,7 +259,7 @@ class _EntryCardState extends ConsumerState<EntryCard> {
               style: AppTheme.baloo(
                   size: 11.5,
                   weight: FontWeight.w700,
-                  color: active ? AppColors.white : AppColors.inkFaint)),
+                  color: active ? AppColors.onAccent : AppColors.inkFaint)),
         ),
       );
     }

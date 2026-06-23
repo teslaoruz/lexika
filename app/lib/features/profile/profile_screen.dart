@@ -356,7 +356,7 @@ class _EditProfileDialogState extends ConsumerState<_EditProfileDialog> {
       label: label,
       useBaloo: true,
       bg: selected ? AppColors.violet : AppColors.bgSoft,
-      fg: selected ? AppColors.white : AppColors.inkSoft,
+      fg: selected ? AppColors.onAccent : AppColors.inkSoft,
       onTap: () => setState(() => _lang = code),
     );
   }

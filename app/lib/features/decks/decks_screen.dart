@@ -125,13 +125,13 @@ class DecksScreen extends ConsumerWidget {
                     size: 28,
                     weight: FontWeight.w800,
                     height: 1,
-                    color: AppColors.white)),
+                    color: AppColors.onAccent)),
             const SizedBox(height: 5),
             Text(label,
                 style: AppTheme.quick(
                     size: 12,
                     weight: FontWeight.w600,
-                    color: AppColors.white.withValues(alpha: 0.85))),
+                    color: AppColors.onAccent.withValues(alpha: 0.85))),
           ],
         ),
       );
@@ -157,7 +157,7 @@ class DecksScreen extends ConsumerWidget {
                 height: 44,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: AppColors.white.withValues(alpha: 0.25),
+                  color: AppColors.onAccent.withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: const Text('💪', style: TextStyle(fontSize: 20)),
@@ -171,13 +171,13 @@ class DecksScreen extends ConsumerWidget {
                         style: AppTheme.baloo(
                             size: 15,
                             weight: FontWeight.w700,
-                            color: AppColors.white)),
+                            color: AppColors.onAccent)),
                     const SizedBox(height: 2),
                     Text('$count word${count == 1 ? '' : 's'} need extra attention',
                         style: AppTheme.quick(
                             size: 12,
                             weight: FontWeight.w600,
-                            color: AppColors.white.withValues(alpha: 0.85))),
+                            color: AppColors.onAccent.withValues(alpha: 0.85))),
                   ],
                 ),
               ),

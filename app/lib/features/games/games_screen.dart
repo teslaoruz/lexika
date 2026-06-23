@@ -158,7 +158,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         child: SafeArea(
           child: due.when(
             loading: () => Center(
-                child: CircularProgressIndicator(color: AppColors.white)),
+                child: CircularProgressIndicator(color: AppColors.onAccent)),
             error: (_, _) => _message('Could not load words'),
             data: (cards) => _content(cards),
           ),
@@ -226,7 +226,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           const SizedBox(height: 12),
           Text('$_correct / $total correct',
               style: AppTheme.baloo(
-                  size: 26, weight: FontWeight.w800, color: AppColors.white)),
+                  size: 26, weight: FontWeight.w800, color: AppColors.onAccent)),
           const SizedBox(height: 24),
           BouncePress(
             onTap: () => Navigator.of(context).pop(),
@@ -254,7 +254,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             child: Text(text,
                 textAlign: TextAlign.center,
                 style: AppTheme.baloo(
-                    size: 19, weight: FontWeight.w700, color: AppColors.white)),
+                    size: 19, weight: FontWeight.w700, color: AppColors.onAccent)),
           ),
         ),
       ]);
@@ -268,12 +268,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           pressedScale: 0.88,
           child: GlassSurface(
             radius: 12,
-            tint: AppColors.white,
+            tint: AppColors.onAccent,
             opacity: 0.18,
             child: SizedBox(
               width: 36,
               height: 36,
-              child: Icon(Icons.close_rounded, size: 18, color: AppColors.white),
+              child: Icon(Icons.close_rounded, size: 18, color: AppColors.onAccent),
             ),
           ),
         ),
@@ -282,7 +282,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             height: 10,
             margin: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
-              color: AppColors.white.withValues(alpha: 0.22),
+              color: AppColors.onAccent.withValues(alpha: 0.22),
               borderRadius: BorderRadius.circular(100),
             ),
             child: Align(
@@ -292,7 +292,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   duration: const Duration(milliseconds: 300),
                   width: c.maxWidth * progress.clamp(0, 1),
                   decoration: BoxDecoration(
-                    color: AppColors.white,
+                    color: AppColors.onAccent,
                     borderRadius: BorderRadius.circular(100),
                   ),
                 ),
@@ -302,7 +302,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         ),
         Text('${widget.type.emoji} ${widget.type.title}',
             style: AppTheme.baloo(
-                size: 13, weight: FontWeight.w700, color: AppColors.white)),
+                size: 13, weight: FontWeight.w700, color: AppColors.onAccent)),
       ]),
     );
   }
@@ -361,12 +361,12 @@ class _ChoiceQuestionState extends State<_ChoiceQuestion> {
                           style: AppTheme.quick(
                               size: 13,
                               weight: FontWeight.w600,
-                              color: AppColors.white.withValues(alpha: 0.85))),
+                              color: AppColors.onAccent.withValues(alpha: 0.85))),
                     ])
                   : Text(widget.card.headword,
                       textAlign: TextAlign.center,
                       style: AppTheme.baloo(
-                          size: 38, weight: FontWeight.w800, color: AppColors.white)),
+                          size: 38, weight: FontWeight.w800, color: AppColors.onAccent)),
             ),
           ),
           for (final o in _options) ...[
@@ -385,10 +385,10 @@ class _ChoiceQuestionState extends State<_ChoiceQuestion> {
     if (_picked != null) {
       if (isAnswer) {
         bg = AppColors.mint;
-        fg = AppColors.white;
+        fg = AppColors.onAccent;
       } else if (o.headword == _picked) {
         bg = AppColors.coral;
-        fg = AppColors.white;
+        fg = AppColors.onAccent;
       } else {
         bg = AppColors.white.withValues(alpha: 0.6);
       }
@@ -454,19 +454,19 @@ class _TypingQuestionState extends State<_TypingQuestion> {
                     style: AppTheme.quick(
                         size: 13,
                         weight: FontWeight.w600,
-                        color: AppColors.white.withValues(alpha: 0.85))),
+                        color: AppColors.onAccent.withValues(alpha: 0.85))),
                 const SizedBox(height: 12),
                 Text(meaningOf(widget.card),
                     textAlign: TextAlign.center,
                     style: AppTheme.baloo(
-                        size: 24, weight: FontWeight.w700, color: AppColors.white)),
+                        size: 24, weight: FontWeight.w700, color: AppColors.onAccent)),
                 if (_correct == false) ...[
                   const SizedBox(height: 14),
                   Text('→ ${widget.card.headword}',
                       style: AppTheme.baloo(
                           size: 17,
                           weight: FontWeight.w700,
-                          color: AppColors.white)),
+                          color: AppColors.onAccent)),
                 ],
               ]),
             ),
@@ -604,7 +604,7 @@ class _MatchingBoardState extends State<_MatchingBoard> {
               style: AppTheme.quick(
                   size: 13,
                   weight: FontWeight.w600,
-                  color: AppColors.white.withValues(alpha: 0.85))),
+                  color: AppColors.onAccent.withValues(alpha: 0.85))),
           const SizedBox(height: 16),
           Expanded(
             child: Row(
@@ -627,10 +627,10 @@ class _MatchingBoardState extends State<_MatchingBoard> {
     Color fg = AppColors.ink;
     if (matched) {
       bg = AppColors.mint.withValues(alpha: 0.85);
-      fg = AppColors.white;
+      fg = AppColors.onAccent;
     } else if (flashing) {
       bg = AppColors.coral;
-      fg = AppColors.white;
+      fg = AppColors.onAccent;
     } else if (selected) {
       bg = AppColors.white;
       fg = AppColors.violet;
