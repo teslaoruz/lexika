@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
+import '../lookup/word_detail_screen.dart';
 import '../review/review_screen.dart';
 
 /// Lists the words saved in a single deck and lets you practise just that deck.
@@ -71,7 +72,7 @@ class DeckDetailScreen extends ConsumerWidget {
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                         itemCount: words.length,
                         separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (_, i) => _wordTile(words[i]),
+                        itemBuilder: (ctx, i) => _wordTile(ctx, words[i]),
                       ),
                     ),
                   ],
@@ -81,7 +82,11 @@ class DeckDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _wordTile(DeckWord w) => AppCard(
+  Widget _wordTile(BuildContext context, DeckWord w) => AppCard(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+              builder: (_) => WordDetailScreen(word: w.headword)),
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

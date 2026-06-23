@@ -136,26 +136,50 @@ class ThemeModeController extends Notifier<bool> {
 final themeModeProvider =
     NotifierProvider<ThemeModeController, bool>(ThemeModeController.new);
 
+/// The current search-box query. [correct] enables typo-correction for typed
+/// searches; taps on already-real words (synonyms) set it false.
+typedef LookupQuery = ({String word, bool correct});
+
 /// The word currently shown on the Look up screen ('' = nothing searched yet).
-final currentWordProvider = StateProvider<String>((ref) => '');
+final currentWordProvider =
+    StateProvider<LookupQuery>((ref) => (word: '', correct: true));
 
 /// Lookup result for [currentWordProvider]. No demo fallback — real data or a
 /// real error/empty state. Empty word short-circuits (the screen shows a prompt).
 final lookupProvider = FutureProvider.autoDispose<WordEntry>((ref) async {
-  final word = ref.watch(currentWordProvider).trim();
+  final q = ref.watch(currentWordProvider);
+  final word = q.word.trim();
   if (word.isEmpty) throw ApiException('');
-  return ref.watch(apiClientProvider).lookup(word);
+  return ref.watch(apiClientProvider).lookup(word, correct: q.correct);
 });
 
 final relationsProvider =
     FutureProvider.autoDispose<WordRelations>((ref) async {
-  final word = ref.watch(currentWordProvider).trim();
+  final word = ref.watch(currentWordProvider).word.trim();
   if (word.isEmpty) return const WordRelations();
   final api = ref.watch(apiClientProvider);
   try {
     return await api.relations(word);
   } on ApiException {
     return const WordRelations(); // secondary content — empty, never blocks
+  }
+});
+
+/// Look up a specific word by string (for the deck-word detail view), separate
+/// from the search-box-driven [lookupProvider].
+final wordEntryProvider =
+    FutureProvider.autoDispose.family<WordEntry, String>((ref, word) async {
+  // Deck words are already real — don't typo-correct them.
+  return ref.watch(apiClientProvider).lookup(word, correct: false);
+});
+
+/// Relations for a specific word by string. Secondary content — empty on error.
+final wordRelationsProvider =
+    FutureProvider.autoDispose.family<WordRelations, String>((ref, word) async {
+  try {
+    return await ref.watch(apiClientProvider).relations(word);
+  } on ApiException {
+    return const WordRelations();
   }
 });
 

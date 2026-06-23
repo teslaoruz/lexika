@@ -165,8 +165,12 @@ class ApiClient {
               as Map)
           .cast<String, dynamic>();
 
-  Future<WordEntry> lookup(String word) async {
-    final j = await _get(_u('/words/lookup', {'word': word}));
+  /// [correct] enables typo-correction (search box). Pass false when the word is
+  /// already known to be real (synonym/deck taps) so a dictionary miss returns a
+  /// "not found" rather than a wrong near-spelling.
+  Future<WordEntry> lookup(String word, {bool correct = true}) async {
+    final j = await _get(
+        _u('/words/lookup', {'word': word, 'correct': correct}));
     return WordEntry.fromJson(j as Map<String, dynamic>);
   }
 

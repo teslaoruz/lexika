@@ -24,6 +24,9 @@ class ReviewScreen extends ConsumerStatefulWidget {
 
 class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   int _index = 0;
+  // Card-swipe animation: horizontal offset as a fraction of card width.
+  double _slideX = 0;
+  Duration _slideDur = Duration.zero;
 
   @override
   Widget build(BuildContext context) {
@@ -83,17 +86,32 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       children: [
         _topBar(current + 1, total),
         Expanded(
-          // Mobile gesture: swipe the card right = Good, left = Again. Buttons
+          // Mobile gesture: drag the card right = Good, left = Again. The card
+          // follows the finger and tilts, then flies off on release. Buttons
           // still cover Hard/Easy. ponytail: two directions, not a 4-way pad.
           child: GestureDetector(
-            onHorizontalDragEnd: (d) {
-              final v = d.primaryVelocity ?? 0;
-              if (v > 250) _grade(card, 'good');
-              if (v < -250) _grade(card, 'again');
+            onHorizontalDragUpdate: (d) {
+              final w = MediaQuery.of(context).size.width;
+              setState(() {
+                _slideDur = Duration.zero; // follow the finger 1:1
+                _slideX += d.delta.dx / w;
+              });
             },
+            onHorizontalDragEnd: (d) => _onDragEnd(card, d.primaryVelocity ?? 0),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              child: Center(child: FlipCard(key: ValueKey(card.headword), card: card)),
+              child: Center(
+                child: AnimatedSlide(
+                  offset: Offset(_slideX, 0),
+                  duration: _slideDur,
+                  curve: kEaseSmooth,
+                  child: Transform.rotate(
+                    angle: _slideX * 0.18, // subtle tilt in the drag direction
+                    child:
+                        FlipCard(key: ValueKey(card.headword), card: card),
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -211,30 +229,54 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     );
   }
 
+  /// Release handler for the swipe gesture: fly the card off and grade it, or
+  /// snap it back if the drag was too small.
+  void _onDragEnd(ReviewCard card, double velocity) {
+    final go = _slideX.abs() > 0.22 || velocity.abs() > 600;
+    if (!go) {
+      setState(() {
+        _slideDur = const Duration(milliseconds: 220);
+        _slideX = 0; // snap back to center
+      });
+      return;
+    }
+    final dir = _slideX != 0 ? _slideX.sign : (velocity < 0 ? -1.0 : 1.0);
+    setState(() {
+      _slideDur = const Duration(milliseconds: 220);
+      _slideX = dir * 1.5; // fling off-screen
+    });
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      setState(() {
+        _slideX = 0; // recenter — the next card mounts via the index change
+        _slideDur = Duration.zero;
+      });
+      _grade(card, dir > 0 ? 'good' : 'again');
+    });
+  }
+
   Future<void> _grade(ReviewCard card, String grade) async {
     grade == 'again' ? Sfx.wrong() : Sfx.correct();
-    // Submit and award XP; ignore failures so demo mode still advances.
-    final api = ref.read(apiClientProvider);
-    int xp = 0;
-    if (card.wordId != 0) {
-      try {
-        xp = await api.submit(card.wordId, grade);
-        ref.invalidate(statsProvider); // refresh streak/XP in the top bar
-      } catch (_) {/* ponytail: offline demo — ignore */}
-    }
-    if (!mounted) return;
-    if (xp > 0) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(SnackBar(
-          content: Text('+$xp XP',
-              style: AppTheme.baloo(
-                  size: 15, weight: FontWeight.w700, color: AppColors.onAccent)),
-          duration: const Duration(milliseconds: 900),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.violet,
-        ));
-    }
-    setState(() => _index++);
+    setState(() => _index++); // advance immediately for a snappy feel
+    // Submit + award XP in the background; ignore failures so review continues.
+    if (card.wordId == 0) return;
+    try {
+      final xp = await ref.read(apiClientProvider).submit(card.wordId, grade);
+      ref.invalidate(statsProvider); // refresh streak/XP in the top bar
+      if (mounted && xp > 0) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(
+            content: Text('+$xp XP',
+                style: AppTheme.baloo(
+                    size: 15,
+                    weight: FontWeight.w700,
+                    color: AppColors.onAccent)),
+            duration: const Duration(milliseconds: 900),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.violet,
+          ));
+      }
+    } catch (_) {/* ponytail: offline — review already advanced */}
   }
 }

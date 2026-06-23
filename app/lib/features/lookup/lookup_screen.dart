@@ -20,7 +20,7 @@ class LookupScreen extends ConsumerStatefulWidget {
 
 class _LookupScreenState extends ConsumerState<LookupScreen> {
   late final TextEditingController _ctrl =
-      TextEditingController(text: ref.read(currentWordProvider));
+      TextEditingController(text: ref.read(currentWordProvider).word);
 
   Timer? _debounce;
   List<String> _suggestions = const [];
@@ -32,14 +32,16 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
     super.dispose();
   }
 
-  void _lookup(String word) {
+  // [correct] = typo-correct (typed search). Synonym/relation taps pass false so
+  // a real word the dictionary lacks isn't swapped for a wrong near-spelling.
+  void _lookup(String word, {bool correct = true}) {
     final w = word.trim().toLowerCase();
     if (w.isEmpty) return;
     _ctrl.text = w;
     // Chosen / submitted: hide suggestions.
     _debounce?.cancel();
     if (_suggestions.isNotEmpty) setState(() => _suggestions = const []);
-    ref.read(currentWordProvider.notifier).state = w;
+    ref.read(currentWordProvider.notifier).state = (word: w, correct: correct);
   }
 
   // Live autocomplete: debounce keystrokes, then fetch headword suggestions.
@@ -70,7 +72,7 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currentWord = ref.watch(currentWordProvider).trim();
+    final currentWord = ref.watch(currentWordProvider).word.trim();
     final lookup = ref.watch(lookupProvider);
     final relations = ref.watch(relationsProvider);
 
@@ -180,7 +182,7 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
                 entry: entry,
                 relations: relations.value ?? const WordRelations(),
                 relationsLoading: relations.isLoading,
-                onLookup: _lookup,
+                onLookup: (w) => _lookup(w, correct: false),
                 onSave: () {},
               ),
             ),

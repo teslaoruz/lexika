@@ -210,9 +210,17 @@ def word_to_lookup(w: Word) -> dict:
 
 # ------------------------------------------------------------------- /words
 @app.get("/words/lookup")
-def lookup(word: str = Query(...), db: Session = Depends(get_db)):
+def lookup(
+    word: str = Query(...),
+    correct: bool = Query(True),
+    db: Session = Depends(get_db),
+):
+    # `correct` enables typo-correction for the search box. Taps on words that are
+    # already real (synonyms, deck cards) pass correct=false so a word the free
+    # dictionary happens to lack (e.g. "saltiness") returns 404 instead of being
+    # silently swapped for a wrong near-spelling.
     try:
-        w = get_or_fetch_word(db, word)
+        w = get_or_fetch_word(db, word, correct=correct)
     except WordNotFound:
         raise HTTPException(status_code=404, detail=f"'{word}' is not a real word")
     return word_to_lookup(w)
