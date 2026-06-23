@@ -78,10 +78,28 @@ Keep the connection string handy for the next step.
 
 ---
 
+## One-command web deploys
+
+After a one-time login, `./deploy_web.sh` builds the web bundle and ships it to
+Cloudflare Pages in one step.
+
+```sh
+# one-time
+npx wrangler login
+npx wrangler pages project create lexika --production-branch main
+
+# every deploy after that
+./deploy_web.sh
+```
+
+The script bakes in `API_BASE=https://lexika-backend.onrender.com`; override with
+`API_BASE=... ./deploy_web.sh` if your backend URL changes.
+
 ## Updating later
 
 - **Backend / API:** push to `main` → Render auto-deploys.
-- **Web app:** re-run the `flutter build web` command and re-upload `build/web`
-  to Cloudflare Pages (or `wrangler pages deploy`).
+- **Web app:** run `./deploy_web.sh`.
+- **Android:** `flutter build apk --release --dart-define=API_BASE=https://lexika-backend.onrender.com`
+  and reinstall `app/build/app/outputs/flutter-apk/app-release.apk`.
 - **Custom domain:** both Render and Cloudflare Pages let you attach one for free;
   remember to add the new web origin to `LEXIKA_ALLOWED_ORIGINS`.
