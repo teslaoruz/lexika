@@ -235,6 +235,21 @@ final allCardsProvider =
   return ref.watch(apiClientProvider).allCards();
 });
 
+/// Weak words shaped as review cards, so games can practise just the hard ones.
+final weakReviewProvider =
+    FutureProvider.autoDispose<List<ReviewCard>>((ref) async {
+  final weak = await ref.watch(weakWordsProvider.future);
+  return [
+    for (final w in weak)
+      ReviewCard(
+        wordId: w.wordId,
+        headword: w.headword,
+        definitionEn: w.definitionEn,
+        translation: w.translation,
+      ),
+  ];
+});
+
 /// All cards in one deck, as review cards — for practising a single deck.
 final deckReviewProvider =
     FutureProvider.autoDispose.family<List<ReviewCard>, int>((ref, deckId) async {

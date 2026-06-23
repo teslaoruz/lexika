@@ -61,19 +61,19 @@ Keep the connection string handy for the next step.
    ➜ Upload assets**.
 3. Name the project `lexika`, then **drag-and-drop the `app/build/web` folder**
    (or its contents). Deploy.
-4. You'll get a URL like `https://lexika.pages.dev`. Open it — the app loads.
+4. You'll get a URL like `https://lexika-app.pages.dev`. Open it — the app loads.
 
-> Prefer the CLI? `npm i -g wrangler && wrangler pages deploy app/build/web --project-name lexika`
+> Prefer the CLI? `npm i -g wrangler && wrangler pages deploy app/build/web --project-name lexika-app`
 
 ---
 
 ## 4. Connect them (CORS)
 
 1. Back in Render ➜ `lexika-backend` ➜ **Environment**, set
-   `LEXIKA_ALLOWED_ORIGINS` to your real Pages URL, e.g. `https://lexika.pages.dev`
+   `LEXIKA_ALLOWED_ORIGINS` to your real Pages URL, e.g. `https://lexika-app.pages.dev`
    (no trailing slash; comma-separate if you have more than one).
 2. Save — Render redeploys automatically.
-3. Open `https://lexika.pages.dev`, register an account, look up a word, save it
+3. Open `https://lexika-app.pages.dev`, register an account, look up a word, save it
    to a deck. Done. 🎉
 
 ---
@@ -86,7 +86,7 @@ Cloudflare Pages in one step.
 ```sh
 # one-time
 npx wrangler login
-npx wrangler pages project create lexika --production-branch main
+npx wrangler pages project create lexika-app --production-branch main
 
 # every deploy after that
 ./deploy_web.sh

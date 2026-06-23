@@ -13,7 +13,7 @@
 set -euo pipefail
 
 API_BASE="${API_BASE:-https://lexika-backend.onrender.com}"
-PROJECT="${CF_PAGES_PROJECT:-lexika}"
+PROJECT="${CF_PAGES_PROJECT:-lexika-app}"
 
 cd "$(dirname "$0")/app"
 

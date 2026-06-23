@@ -6,3 +6,4 @@ build/
 .env
 *.log
 .claude/settings.local.json
+.wrangler/

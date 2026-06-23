@@ -8,6 +8,14 @@ deck, and lock it in with spaced-repetition flashcards and mini-games.
 - **Backend** — FastAPI + PostgreSQL
 - **API contract** — [`CONTRACT.md`](CONTRACT.md) (also live at `/docs` when the backend runs)
 
+## Try it
+
+- 🌐 **Web app:** https://lexika-app.pages.dev
+- 🤖 **Android APK:** [latest release](https://github.com/teslaoruz/lexika/releases/latest)
+
+> Hosted on a free tier — the first request after the backend has been idle can
+> take a few seconds to wake up.
+
 ---
 
 ## Features
