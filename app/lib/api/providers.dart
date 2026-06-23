@@ -136,9 +136,6 @@ class ThemeModeController extends Notifier<bool> {
 final themeModeProvider =
     NotifierProvider<ThemeModeController, bool>(ThemeModeController.new);
 
-/// Recent search chips (client-side only, this session).
-final recentSearchesProvider = StateProvider<List<String>>((ref) => []);
-
 /// The word currently shown on the Look up screen ('' = nothing searched yet).
 final currentWordProvider = StateProvider<String>((ref) => '');
 

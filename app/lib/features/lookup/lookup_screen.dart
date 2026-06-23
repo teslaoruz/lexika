@@ -7,7 +7,6 @@ import '../../api/models.dart';
 import '../../api/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/app_chip.dart';
 import '../../widgets/bounce_press.dart';
 import '../../widgets/fade_up.dart';
 import 'entry_card.dart';
@@ -41,11 +40,6 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
     _debounce?.cancel();
     if (_suggestions.isNotEmpty) setState(() => _suggestions = const []);
     ref.read(currentWordProvider.notifier).state = w;
-    // Push to front of recent searches.
-    final recents = ref.read(recentSearchesProvider);
-    if (!recents.contains(w)) {
-      ref.read(recentSearchesProvider.notifier).state = [w, ...recents].take(8).toList();
-    }
   }
 
   // Live autocomplete: debounce keystrokes, then fetch headword suggestions.
@@ -79,7 +73,6 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
     final currentWord = ref.watch(currentWordProvider).trim();
     final lookup = ref.watch(lookupProvider);
     final relations = ref.watch(relationsProvider);
-    final recents = ref.watch(recentSearchesProvider);
 
     return ListView(
       padding: EdgeInsets.zero,
@@ -173,22 +166,6 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
               ),
             ),
           ),
-        // Recent chips.
-        SizedBox(
-          height: 46,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
-            itemCount: recents.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (_, i) => AppChip(
-              label: recents[i],
-              fontSize: 12.5,
-              shadow: AppColors.shadowSm,
-              onTap: () => _lookup(recents[i]),
-            ),
-          ),
-        ),
         // Entry.
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),

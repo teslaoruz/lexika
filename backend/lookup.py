@@ -180,9 +180,21 @@ def fetch_examples(raw_word: str, limit: int = 8) -> list[str]:
     return out[:limit]
 
 
-def get_or_fetch_word(db: Session, raw_word: str, client: httpx.Client | None = None) -> Word:
+def suggest_spelling(client: httpx.Client, word: str, limit: int = 4) -> list[str]:
+    """Closest real words to a (mis)spelling, best first. Datamuse sounds-like
+    (`sl=`) first — it catches transpositions like recieve->receive that the
+    spelling pattern (`sp=`) misses — then `sp=` to fill in.
+    ponytail: two best-effort calls, no fuzzy lib; Datamuse does the ranking."""
+    w = word.strip().lower()
+    rows = _datamuse(client, sl=w, max=limit) + _datamuse(client, sp=w, max=limit)
+    return _dedupe([r["word"] for r in rows if r.get("word") != w])
+
+
+def get_or_fetch_word(db: Session, raw_word: str, client: httpx.Client | None = None,
+                      correct: bool = True) -> Word:
     """Return a cached Word, fetching + caching from the Dictionary API on miss.
-    Raises WordNotFound if the dictionary API 404s (not a real word)."""
+    On a 404, if `correct`, retry once with the closest real spelling so a typo
+    like "recieve" resolves to "receive". Raises WordNotFound if nothing fits."""
     headword = raw_word.strip().lower()
     if not headword:
         raise WordNotFound(raw_word)
@@ -196,6 +208,13 @@ def get_or_fetch_word(db: Session, raw_word: str, client: httpx.Client | None = 
     try:
         resp = client.get(DICT_API.format(word=headword))
         if resp.status_code == 404:
+            # Spelling fallback: try the closest real word(s) once.
+            if correct:
+                for sug in suggest_spelling(client, headword):
+                    try:
+                        return get_or_fetch_word(db, sug, client=client, correct=False)
+                    except WordNotFound:
+                        continue
             raise WordNotFound(headword)
         resp.raise_for_status()
 
@@ -266,6 +285,9 @@ def _selfcheck():
         assert w1.id == w2.id, (w1.id, w2.id)
         assert after == before, f"cache miss on second lookup: {before} -> {after}"
         assert w1.headword == "ubiquitous"
+        # Spelling fallback: a typo resolves to the corrected entry.
+        typo = get_or_fetch_word(db, "recieve")
+        assert typo.headword == "receive", typo.headword
         print(f"lookup cache self-check: passed (cache hit made {after - before} network calls).")
     finally:
         db.close()
