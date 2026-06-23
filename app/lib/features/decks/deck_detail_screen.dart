@@ -5,14 +5,23 @@ import '../../api/models.dart';
 import '../../api/providers.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
+import '../review/review_screen.dart';
 
-/// Lists the words saved in a single deck. Reachable by tapping a deck on the
-/// Decks screen — this is where a freshly-saved word shows up.
+/// Lists the words saved in a single deck and lets you practise just that deck.
+/// Reachable by tapping a deck on the Decks screen — this is where a
+/// freshly-saved word shows up.
 class DeckDetailScreen extends ConsumerWidget {
   const DeckDetailScreen({super.key, required this.deck});
 
   final Deck deck;
+
+  void _practice(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ReviewScreen(deckId: deck.id),
+    ));
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -33,11 +42,39 @@ class DeckDetailScreen extends ConsumerWidget {
           error: (_, _) => _centered('Could not load this deck'),
           data: (words) => words.isEmpty
               ? _empty()
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                  itemCount: words.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => _wordTile(words[i]),
+              : Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                      child: AppButton(
+                        label: 'Practice this deck',
+                        icon: Icons.school_rounded,
+                        bg: AppColors.violet,
+                        shadow: AppColors.shadowViolet,
+                        onTap: () => _practice(context),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
+                      child: Row(
+                        children: [
+                          Text('${words.length} word${words.length == 1 ? '' : 's'}',
+                              style: AppTheme.baloo(
+                                  size: 14,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.inkSoft)),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                        itemCount: words.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) => _wordTile(words[i]),
+                      ),
+                    ),
+                  ],
                 ),
         ),
       ),

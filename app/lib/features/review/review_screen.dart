@@ -11,8 +11,12 @@ import '../../widgets/sfx.dart';
 import 'flip_card.dart';
 
 /// Fullscreen review modal over the violet gradient (prototype `.review-screen`).
+/// With [deckId] set it practises every card in that one deck; otherwise it
+/// reviews all cards due across decks.
 class ReviewScreen extends ConsumerStatefulWidget {
-  const ReviewScreen({super.key});
+  const ReviewScreen({super.key, this.deckId});
+
+  final int? deckId;
 
   @override
   ConsumerState<ReviewScreen> createState() => _ReviewScreenState();
@@ -23,7 +27,13 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final due = ref.watch(dueCardsProvider);
+    final source = widget.deckId == null
+        ? dueCardsProvider
+        : deckReviewProvider(widget.deckId!);
+    final due = ref.watch(source);
+    final emptyMsg = widget.deckId == null
+        ? 'Nothing due — nice work! 🎉'
+        : 'This deck has no words yet 🙂';
 
     return Material(
       type: MaterialType.transparency,
@@ -41,7 +51,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                 child: CircularProgressIndicator(color: AppColors.onAccent)),
             error: (_, _) => _message('Could not load cards'),
             data: (cards) {
-              if (cards.isEmpty) return _message('Nothing due — nice work! 🎉');
+              if (cards.isEmpty) return _message(emptyMsg);
               final total = cards.length;
               final current = _index.clamp(0, total - 1);
               if (_index >= total) return _message('Review complete! 🎉');

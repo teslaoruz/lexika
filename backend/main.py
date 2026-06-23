@@ -399,6 +399,34 @@ def deck_cards(deck_id: int, user: User = Depends(current_user), db: Session = D
     ]
 
 
+@app.get("/decks/{deck_id}/review")
+def deck_review(deck_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """All cards in a deck as review cards, for practising one deck end to end
+    (not just the due subset). Same shape as /review/due."""
+    deck = db.get(Deck, deck_id)
+    if not deck or (deck.user_id is not None and deck.user_id != user.id):
+        raise HTTPException(404, "deck not found")
+    rows = db.scalars(
+        select(Word)
+        .join(DeckCard, DeckCard.word_id == Word.id)
+        .where(DeckCard.deck_id == deck_id)
+        .order_by(DeckCard.id.desc())
+    ).all()
+    lang = user.native_language
+    return [
+        {
+            "word_id": w.id,
+            "headword": w.headword,
+            "phonetic": w.phonetic,
+            "audio_url": w.audio_url,
+            "definition_en": w.definition_en,
+            "translation": (w.translations or {}).get(lang) if lang else None,
+            "example_en": w.example_en,
+        }
+        for w in rows
+    ]
+
+
 # ------------------------------------------------------------------- /review
 @app.get("/review/due")
 def review_due(limit: int = Query(20, ge=1, le=200), user: User = Depends(current_user), db: Session = Depends(get_db)):

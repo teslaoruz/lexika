@@ -193,6 +193,12 @@ final dueCardsProvider =
   return ref.watch(apiClientProvider).due();
 });
 
+/// All cards in one deck, as review cards — for practising a single deck.
+final deckReviewProvider =
+    FutureProvider.autoDispose.family<List<ReviewCard>, int>((ref, deckId) async {
+  return ref.watch(apiClientProvider).deckReview(deckId);
+});
+
 /// Phase 5: weak words / words to try next. Empty list is a valid state.
 final weakWordsProvider = FutureProvider.autoDispose<List<WordTip>>((ref) async {
   return ref.watch(apiClientProvider).weakWords();

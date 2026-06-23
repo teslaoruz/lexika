@@ -189,6 +189,14 @@ class ApiClient {
         .toList();
   }
 
+  /// All cards in a deck as review cards (for practising one deck).
+  Future<List<ReviewCard>> deckReview(int deckId) async {
+    final j = await _get(_u('/decks/$deckId/review'));
+    return (j as List)
+        .map((e) => ReviewCard.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Autocomplete: headword prefix suggestions for the search box.
   /// `GET /words/suggest?q=<prefix>` → `["aberration", ...]`.
   Future<List<String>> suggest(String query, {int limit = 8}) async {
