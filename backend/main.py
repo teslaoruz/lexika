@@ -668,6 +668,19 @@ def _get_or_create_stats(db: Session, user_id: int) -> UserStats:
     return stats
 
 
+@app.get("/stats/activity")
+def stats_activity(days: int = Query(120, ge=7, le=400), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Distinct calendar days (UTC) the user reviewed something, for the streak
+    calendar. Gaps between dates are where a streak was lost."""
+    since = now() - timedelta(days=days)
+    rows = db.scalars(
+        select(ReviewLog.reviewed_at)
+        .where(ReviewLog.user_id == user.id, ReviewLog.reviewed_at >= since)
+    ).all()
+    dates = sorted({r.date().isoformat() for r in rows})
+    return {"active_dates": dates}
+
+
 @app.get("/stats")
 def stats(user: User = Depends(current_user), db: Session = Depends(get_db)):
     s = _get_or_create_stats(db, user.id)

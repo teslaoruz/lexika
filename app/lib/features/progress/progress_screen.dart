@@ -33,6 +33,10 @@ class ProgressScreen extends ConsumerWidget {
           data: _tiles,
         ),
         const SizedBox(height: 20),
+        const SectionLabel('Activity'),
+        const SizedBox(height: 10),
+        _streakCalendar(ref.watch(activityProvider)),
+        const SizedBox(height: 20),
         const SectionLabel('Accuracy by level'),
         const SizedBox(height: 10),
         accuracy.when(
@@ -61,6 +65,106 @@ class ProgressScreen extends ConsumerWidget {
         const SizedBox(height: 20),
         const ClassModule(),
       ],
+    );
+  }
+
+  /// GitHub-style activity grid: the last 13 weeks, one cell per day, filled on
+  /// days the user reviewed. Gaps make a broken streak visible at a glance.
+  Widget _streakCalendar(AsyncValue<Set<String>> activity) {
+    return activity.when(
+      loading: () => const AppCard(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Center(
+              child: CircularProgressIndicator(color: AppColors.violet)),
+        ),
+      ),
+      error: (_, _) => _centered('Could not load activity'),
+      data: (active) {
+        two(int n) => n.toString().padLeft(2, '0');
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        const weeks = 13;
+        // Start `weeks*7` days back, aligned to Monday so columns are weeks.
+        var start = today.subtract(const Duration(days: weeks * 7 - 1));
+        start = start.subtract(Duration(days: start.weekday - 1));
+
+        final columns = <Widget>[];
+        for (var day = start;
+            !day.isAfter(today);
+            day = day.add(const Duration(days: 7))) {
+          final cells = <Widget>[];
+          for (var d = 0; d < 7; d++) {
+            final cellDay = day.add(Duration(days: d));
+            if (cellDay.isAfter(today)) {
+              cells.add(const SizedBox(width: 13, height: 13));
+            } else {
+              final iso =
+                  '${cellDay.year}-${two(cellDay.month)}-${two(cellDay.day)}';
+              final on = active.contains(iso);
+              final isToday = cellDay == today;
+              cells.add(Container(
+                width: 13,
+                height: 13,
+                decoration: BoxDecoration(
+                  color: on ? AppColors.violet : AppColors.bgSoft,
+                  borderRadius: BorderRadius.circular(3),
+                  border: isToday
+                      ? Border.all(color: AppColors.violetDark, width: 1.5)
+                      : null,
+                ),
+              ));
+            }
+            if (d < 6) cells.add(const SizedBox(height: 3));
+          }
+          columns.add(Column(mainAxisSize: MainAxisSize.min, children: cells));
+          columns.add(const SizedBox(width: 3));
+        }
+
+        return AppCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                reverse: true, // keep the most recent weeks in view
+                child: Row(children: columns),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Text('Less',
+                      style: AppTheme.quick(
+                          size: 11, color: AppColors.inkFaint)),
+                  const SizedBox(width: 6),
+                  Container(
+                      width: 11,
+                      height: 11,
+                      decoration: BoxDecoration(
+                          color: AppColors.bgSoft,
+                          borderRadius: BorderRadius.circular(3))),
+                  const SizedBox(width: 4),
+                  Container(
+                      width: 11,
+                      height: 11,
+                      decoration: BoxDecoration(
+                          color: AppColors.violet,
+                          borderRadius: BorderRadius.circular(3))),
+                  const SizedBox(width: 6),
+                  Text('More',
+                      style: AppTheme.quick(
+                          size: 11, color: AppColors.inkFaint)),
+                  const Spacer(),
+                  Text('Each square is a day you practised',
+                      style: AppTheme.quick(
+                          size: 11, color: AppColors.inkFaint)),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

@@ -223,6 +223,11 @@ final accuracyByLevelProvider =
   return ref.watch(apiClientProvider).accuracyByLevel();
 });
 
+/// ISO dates the user was active — drives the streak calendar.
+final activityProvider = FutureProvider<Set<String>>((ref) async {
+  return ref.watch(apiClientProvider).activityDates();
+});
+
 final dueCardsProvider =
     FutureProvider.autoDispose<List<ReviewCard>>((ref) async {
   return ref.watch(apiClientProvider).due();

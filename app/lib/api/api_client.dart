@@ -270,6 +270,14 @@ class ApiClient {
     return UserStats.fromJson(j as Map<String, dynamic>);
   }
 
+  /// Set of ISO dates (yyyy-MM-dd) the user was active — for the streak calendar.
+  Future<Set<String>> activityDates() async {
+    final j = await _get(_u('/stats/activity'));
+    return ((j as Map)['active_dates'] as List? ?? [])
+        .map((e) => e.toString())
+        .toSet();
+  }
+
   Future<List<LevelAccuracy>> accuracyByLevel() async {
     final j = await _get(_u('/stats/accuracy_by_level'));
     return (j as List)
