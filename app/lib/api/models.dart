@@ -15,6 +15,9 @@ class WordEntry {
   final Map<String, String> translations;
   final List<String> synonyms;
   final List<String> antonyms;
+  /// Set when the search was auto-corrected: the original (misspelled) query, so
+  /// the UI can show "Showing results for X — you searched Y". Null otherwise.
+  final String? correctedFrom;
 
   const WordEntry({
     this.id,
@@ -29,6 +32,7 @@ class WordEntry {
     this.translations = const {},
     this.synonyms = const [],
     this.antonyms = const [],
+    this.correctedFrom,
   });
 
   factory WordEntry.fromJson(Map<String, dynamic> j) => WordEntry(
@@ -44,6 +48,7 @@ class WordEntry {
         translations: _strMap(j['translations']),
         synonyms: _strList(j['synonyms']),
         antonyms: _strList(j['antonyms']),
+        correctedFrom: j['corrected_from'] as String?,
       );
 }
 
@@ -108,6 +113,12 @@ class Deck {
   final int cardCount;
   final int dueCount;
   final bool isSystemDeck;
+  /// True when this is a class deck shared by a teacher — read-only for students.
+  final bool isShared;
+  /// Teacher's name for a shared deck ("from Ms Lee"); null for own decks.
+  final String? sharedBy;
+  /// Name of the class this deck was shared from; null for own/system decks.
+  final String? sharedClass;
 
   const Deck({
     required this.id,
@@ -115,6 +126,9 @@ class Deck {
     required this.cardCount,
     required this.dueCount,
     this.isSystemDeck = false,
+    this.isShared = false,
+    this.sharedBy,
+    this.sharedClass,
   });
 
   factory Deck.fromJson(Map<String, dynamic> j) => Deck(
@@ -123,6 +137,9 @@ class Deck {
         cardCount: (j['card_count'] ?? 0) as int,
         dueCount: (j['due_count'] ?? 0) as int,
         isSystemDeck: (j['is_system_deck'] ?? false) as bool,
+        isShared: (j['is_shared'] ?? false) as bool,
+        sharedBy: j['shared_by'] as String?,
+        sharedClass: j['shared_class'] as String?,
       );
 }
 
@@ -232,6 +249,118 @@ class Cohort {
         joinCode: (j['join_code'] ?? '') as String,
         memberCount: (j['member_count'] ?? 0) as int,
         isTeacher: (j['is_teacher'] ?? false) as bool,
+      );
+}
+
+/// Full info about one class (GET /cohorts/{id}) — the "tap a class" detail view.
+class CohortDetail {
+  final int id;
+  final String name;
+  final String joinCode;
+  final int memberCount;
+  final bool isTeacher;
+  final String? teacherName;
+  final List<ClassMember> members;
+  final List<ClassDeck> decks; // decks shared to this class
+
+  const CohortDetail({
+    required this.id,
+    required this.name,
+    required this.joinCode,
+    this.memberCount = 0,
+    this.isTeacher = false,
+    this.teacherName,
+    this.members = const [],
+    this.decks = const [],
+  });
+
+  factory CohortDetail.fromJson(Map<String, dynamic> j) => CohortDetail(
+        id: (j['id'] ?? 0) as int,
+        name: (j['name'] ?? '') as String,
+        joinCode: (j['join_code'] ?? '') as String,
+        memberCount: (j['member_count'] ?? 0) as int,
+        isTeacher: (j['is_teacher'] ?? false) as bool,
+        teacherName: j['teacher_name'] as String?,
+        members: ((j['members'] as List?) ?? [])
+            .map((e) => ClassMember.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        decks: ((j['decks'] as List?) ?? [])
+            .map((e) => ClassDeck.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class ClassMember {
+  final int userId;
+  final String displayName;
+  final bool isTeacher;
+  const ClassMember(
+      {required this.userId, required this.displayName, this.isTeacher = false});
+
+  factory ClassMember.fromJson(Map<String, dynamic> j) => ClassMember(
+        userId: (j['user_id'] ?? 0) as int,
+        displayName: (j['display_name'] ?? '') as String,
+        isTeacher: (j['is_teacher'] ?? false) as bool,
+      );
+}
+
+class ClassDeck {
+  final int id;
+  final String name;
+  final int cardCount;
+  const ClassDeck(
+      {required this.id, required this.name, this.cardCount = 0});
+
+  factory ClassDeck.fromJson(Map<String, dynamic> j) => ClassDeck(
+        id: (j['id'] ?? 0) as int,
+        name: (j['name'] ?? '') as String,
+        cardCount: (j['card_count'] ?? 0) as int,
+      );
+}
+
+/// One row in the admin dashboard (GET /admin/users).
+class AdminUser {
+  final int id;
+  final String? email;
+  final String? displayName;
+  final String? authProvider;
+  final bool isAdmin;
+  final int totalXp;
+  final int currentStreak;
+  final int wordsLearned;
+  final int reviewsRecent;
+  final String? lastActive;
+  final String? createdAt;
+  final List<String> classes;
+
+  const AdminUser({
+    required this.id,
+    this.email,
+    this.displayName,
+    this.authProvider,
+    this.isAdmin = false,
+    this.totalXp = 0,
+    this.currentStreak = 0,
+    this.wordsLearned = 0,
+    this.reviewsRecent = 0,
+    this.lastActive,
+    this.createdAt,
+    this.classes = const [],
+  });
+
+  factory AdminUser.fromJson(Map<String, dynamic> j) => AdminUser(
+        id: (j['id'] ?? 0) as int,
+        email: j['email'] as String?,
+        displayName: j['display_name'] as String?,
+        authProvider: j['auth_provider'] as String?,
+        isAdmin: (j['is_admin'] ?? false) as bool,
+        totalXp: (j['total_xp'] ?? 0) as int,
+        currentStreak: (j['current_streak'] ?? 0) as int,
+        wordsLearned: (j['words_learned'] ?? 0) as int,
+        reviewsRecent: (j['reviews_recent'] ?? 0) as int,
+        lastActive: j['last_active'] as String?,
+        createdAt: j['created_at'] as String?,
+        classes: _strList(j['classes']),
       );
 }
 

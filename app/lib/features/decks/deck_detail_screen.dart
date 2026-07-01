@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../api/api_client.dart';
 import '../../api/models.dart';
 import '../../api/providers.dart';
 import '../../theme/app_colors.dart';
@@ -23,6 +24,42 @@ class DeckDetailScreen extends ConsumerWidget {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => ReviewScreen(deckId: deck.id),
     ));
+  }
+
+  // Only the user's own decks are editable; shared/system decks are read-only.
+  bool get _editable => !deck.isShared && !deck.isSystemDeck;
+
+  Future<void> _deleteWord(
+      BuildContext context, WidgetRef ref, DeckWord w) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        title: Text('Remove word?',
+            style: AppTheme.baloo(size: 18, weight: FontWeight.w800)),
+        content: Text('Remove “${w.headword}” from this deck?',
+            style: AppTheme.quick(size: 14, color: AppColors.inkSoft)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref.read(apiClientProvider).deleteCard(deck.id, w.wordId);
+      ref.invalidate(deckCardsProvider(deck.id));
+      ref.invalidate(decksProvider);
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
   }
 
   @override
@@ -85,7 +122,7 @@ class DeckDetailScreen extends ConsumerWidget {
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                         itemCount: words.length,
                         separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (ctx, i) => _wordTile(ctx, words[i]),
+                        itemBuilder: (ctx, i) => _wordTile(ctx, ref, words[i]),
                       ),
                     ),
                   ],
@@ -95,7 +132,7 @@ class DeckDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _wordTile(BuildContext context, DeckWord w) => AppCard(
+  Widget _wordTile(BuildContext context, WidgetRef ref, DeckWord w) => AppCard(
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(
               builder: (_) => WordDetailScreen(word: w.headword)),
@@ -135,6 +172,16 @@ class DeckDetailScreen extends ConsumerWidget {
                         size: 12,
                         weight: FontWeight.w700,
                         color: AppColors.violet)),
+              ),
+            ],
+            if (_editable) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'Remove word',
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.delete_outline_rounded,
+                    color: AppColors.inkFaint),
+                onPressed: () => _deleteWord(context, ref, w),
               ),
             ],
           ],

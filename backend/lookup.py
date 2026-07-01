@@ -14,6 +14,7 @@ from translate import translate_all
 
 DICT_API = "https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
 DATAMUSE_API = "https://api.datamuse.com/words"
+DATAMUSE_SUG = "https://api.datamuse.com/sug"  # prefix autocomplete, freq-ranked
 
 # How many synonyms/antonyms we consider "enough" before reaching for Datamuse.
 _THIN = 2
@@ -184,6 +185,28 @@ def suggest_spelling(client: httpx.Client, word: str, limit: int = 4) -> list[st
     rows = _datamuse(client, sl=w, max=limit) + _datamuse(client, sp=w, max=limit)
     cand = _dedupe([r["word"] for r in rows if r.get("word") != w])
     return [c for c in cand if SequenceMatcher(None, w, c.lower()).ratio() >= 0.6]
+
+
+def autocomplete(prefix: str, limit: int = 8) -> list[str]:
+    """High-quality prefix suggestions from Datamuse's /sug endpoint (real English
+    words, frequency-ranked) — the "like Google" autocomplete. Best-effort: [] on
+    any failure or a too-short prefix. Filters to single words that actually start
+    with the prefix (Datamuse /sug is fuzzy; we only want true completions).
+    ponytail: one keyless call, no local n-gram index to maintain."""
+    p = prefix.strip().lower()
+    if len(p) < 2:
+        return []
+    try:
+        with httpx.Client(timeout=4) as client:
+            r = client.get(DATAMUSE_SUG, params={"s": p, "max": max(limit, 10)})
+            r.raise_for_status()
+            rows = r.json()
+    except Exception:
+        return []
+    return [
+        w for w in (row.get("word", "") for row in rows)
+        if w.lower().startswith(p) and " " not in w
+    ][:limit]
 
 
 def get_or_fetch_word(db: Session, raw_word: str, client: httpx.Client | None = None,

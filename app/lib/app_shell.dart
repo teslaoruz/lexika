@@ -37,24 +37,19 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Center(
-        // Phone-width frame like the prototype's 480px app-frame.
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: SafeArea(
-            child: Column(
-              children: [
-                const TopBar(),
-                Expanded(
-                  child: FadeUp(
-                    key: ValueKey(_index),
-                    child: _screens[_index],
-                  ),
-                ),
-                BottomNav(index: _index, onChanged: _select),
-              ],
+      // The 480px phone-width frame is applied globally in MaterialApp.builder.
+      body: SafeArea(
+        child: Column(
+          children: [
+            const TopBar(),
+            Expanded(
+              child: FadeUp(
+                key: ValueKey(_index),
+                child: _screens[_index],
+              ),
             ),
-          ),
+            BottomNav(index: _index, onChanged: _select),
+          ],
         ),
       ),
     );

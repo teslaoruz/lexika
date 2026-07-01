@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/section_label.dart';
 import 'class_module.dart';
+import 'learned_words_screen.dart';
 
 /// Phase 3 dashboard + Phase 5 modules: live streak / XP / words-learned tiles,
 /// then "work on these" (weak words) and "try next" (suggested words).
@@ -30,12 +31,12 @@ class ProgressScreen extends ConsumerWidget {
                 child: CircularProgressIndicator(color: AppColors.violet)),
           ),
           error: (_, _) => _centered('Could not load progress'),
-          data: _tiles,
+          data: (s) => _tiles(context, s),
         ),
         const SizedBox(height: 20),
         const SectionLabel('Activity'),
         const SizedBox(height: 10),
-        _streakCalendar(ref.watch(activityProvider)),
+        const _ActivityCalendar(),
         const SizedBox(height: 20),
         const SectionLabel('Accuracy by level'),
         const SizedBox(height: 10),
@@ -57,114 +58,29 @@ class ProgressScreen extends ConsumerWidget {
                 ? null
                 : '${(w.accuracy! * 100).round()}%'),
         const SizedBox(height: 20),
-        const SectionLabel('Try these next'),
-        const SizedBox(height: 10),
-        _tipList(suggested, '✨',
-            empty: 'Look up some words to get suggestions.',
-            trailing: (w) => w.isAcademic ? 'academic' : null),
+        Theme(
+          data: Theme.of(context)
+              .copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(top: 10),
+            title: Text('Try these next ✨',
+                style: AppTheme.baloo(
+                    size: 15,
+                    weight: FontWeight.w700,
+                    color: AppColors.inkSoft)),
+            iconColor: AppColors.violet,
+            collapsedIconColor: AppColors.inkFaint,
+            children: [
+              _tipList(suggested, '✨',
+                  empty: 'Look up some words to get suggestions.',
+                  trailing: (w) => w.isAcademic ? 'academic' : null),
+            ],
+          ),
+        ),
         const SizedBox(height: 20),
         const ClassModule(),
       ],
-    );
-  }
-
-  /// GitHub-style activity grid: the last 13 weeks, one cell per day, filled on
-  /// days the user reviewed. Gaps make a broken streak visible at a glance.
-  Widget _streakCalendar(AsyncValue<Set<String>> activity) {
-    return activity.when(
-      loading: () => const AppCard(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Center(
-              child: CircularProgressIndicator(color: AppColors.violet)),
-        ),
-      ),
-      error: (_, _) => _centered('Could not load activity'),
-      data: (active) {
-        two(int n) => n.toString().padLeft(2, '0');
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        const weeks = 13;
-        // Start `weeks*7` days back, aligned to Monday so columns are weeks.
-        var start = today.subtract(const Duration(days: weeks * 7 - 1));
-        start = start.subtract(Duration(days: start.weekday - 1));
-
-        final columns = <Widget>[];
-        for (var day = start;
-            !day.isAfter(today);
-            day = day.add(const Duration(days: 7))) {
-          final cells = <Widget>[];
-          for (var d = 0; d < 7; d++) {
-            final cellDay = day.add(Duration(days: d));
-            if (cellDay.isAfter(today)) {
-              cells.add(const SizedBox(width: 13, height: 13));
-            } else {
-              final iso =
-                  '${cellDay.year}-${two(cellDay.month)}-${two(cellDay.day)}';
-              final on = active.contains(iso);
-              final isToday = cellDay == today;
-              cells.add(Container(
-                width: 13,
-                height: 13,
-                decoration: BoxDecoration(
-                  color: on ? AppColors.violet : AppColors.bgSoft,
-                  borderRadius: BorderRadius.circular(3),
-                  border: isToday
-                      ? Border.all(color: AppColors.violetDark, width: 1.5)
-                      : null,
-                ),
-              ));
-            }
-            if (d < 6) cells.add(const SizedBox(height: 3));
-          }
-          columns.add(Column(mainAxisSize: MainAxisSize.min, children: cells));
-          columns.add(const SizedBox(width: 3));
-        }
-
-        return AppCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                reverse: true, // keep the most recent weeks in view
-                child: Row(children: columns),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Text('Less',
-                      style: AppTheme.quick(
-                          size: 11, color: AppColors.inkFaint)),
-                  const SizedBox(width: 6),
-                  Container(
-                      width: 11,
-                      height: 11,
-                      decoration: BoxDecoration(
-                          color: AppColors.bgSoft,
-                          borderRadius: BorderRadius.circular(3))),
-                  const SizedBox(width: 4),
-                  Container(
-                      width: 11,
-                      height: 11,
-                      decoration: BoxDecoration(
-                          color: AppColors.violet,
-                          borderRadius: BorderRadius.circular(3))),
-                  const SizedBox(width: 6),
-                  Text('More',
-                      style: AppTheme.quick(
-                          size: 11, color: AppColors.inkFaint)),
-                  const Spacer(),
-                  Text('Each square is a day you practised',
-                      style: AppTheme.quick(
-                          size: 11, color: AppColors.inkFaint)),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -331,7 +247,7 @@ class ProgressScreen extends ConsumerWidget {
     );
   }
 
-  Widget _tiles(UserStats s) {
+  Widget _tiles(BuildContext context, UserStats s) {
     return Column(
       children: [
         Row(children: [
@@ -348,8 +264,11 @@ class ProgressScreen extends ConsumerWidget {
         const SizedBox(height: 12),
         Row(children: [
           Expanded(
+            // Tap to see which words you've actually learned.
             child: _tile('✅', '${s.totalWordsLearned}', 'words learned',
-                AppColors.mintLight, AppColors.mintDark),
+                AppColors.mintLight, AppColors.mintDark,
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const LearnedWordsScreen()))),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -362,8 +281,8 @@ class ProgressScreen extends ConsumerWidget {
   }
 
   Widget _tile(String emoji, String value, String label, Color fill,
-      Color textOnFill) {
-    return AppCard(
+      Color textOnFill, {VoidCallback? onTap}) {
+    final card = AppCard(
       padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -389,6 +308,203 @@ class ProgressScreen extends ConsumerWidget {
                   color: AppColors.inkSoft)),
         ],
       ),
+    );
+    if (onTap == null) return card;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: card,
+    );
+  }
+}
+
+/// Collapsed summary that expands into a real month calendar. Days the user
+/// practised (from [activityProvider]) are highlighted; today gets an outline.
+class _ActivityCalendar extends ConsumerStatefulWidget {
+  const _ActivityCalendar();
+
+  @override
+  ConsumerState<_ActivityCalendar> createState() => _ActivityCalendarState();
+}
+
+class _ActivityCalendarState extends ConsumerState<_ActivityCalendar> {
+  bool _open = false;
+  late DateTime _month; // first day of the shown month
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _month = DateTime(now.year, now.month);
+  }
+
+  static String _two(int n) => n.toString().padLeft(2, '0');
+  static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const _months = [
+    'January', 'February', 'March', 'April', 'May', 'June', 'July',
+    'August', 'September', 'October', 'November', 'December'
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = ref.watch(statsProvider);
+    final streak = stats.maybeWhen(
+        data: (s) => s.currentStreak, orElse: () => 0);
+
+    if (!_open) {
+      return AppCard(
+        onTap: () => setState(() => _open = true),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        child: Row(
+          children: [
+            const Text('🔥', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('$streak day streak',
+                      style: AppTheme.baloo(
+                          size: 16,
+                          weight: FontWeight.w700,
+                          color: AppColors.ink)),
+                  Text('View activity calendar',
+                      style: AppTheme.quick(
+                          size: 12.5,
+                          weight: FontWeight.w600,
+                          color: AppColors.inkFaint)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.inkFaint),
+          ],
+        ),
+      );
+    }
+
+    final activity = ref.watch(activityProvider);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final thisMonth = DateTime(now.year, now.month);
+    final canGoForward = _month.isBefore(thisMonth);
+
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Month header with paging arrows.
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => setState(() =>
+                    _month = DateTime(_month.year, _month.month - 1)),
+                child: Icon(Icons.chevron_left, color: AppColors.violet),
+              ),
+              Expanded(
+                child: Text('${_months[_month.month - 1]} ${_month.year}',
+                    textAlign: TextAlign.center,
+                    style: AppTheme.baloo(
+                        size: 16,
+                        weight: FontWeight.w700,
+                        color: AppColors.ink)),
+              ),
+              GestureDetector(
+                onTap: canGoForward
+                    ? () => setState(() =>
+                        _month = DateTime(_month.year, _month.month + 1))
+                    : null,
+                child: Icon(Icons.chevron_right,
+                    color: canGoForward
+                        ? AppColors.violet
+                        : AppColors.inkFaint),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (final w in _weekdays)
+                Expanded(
+                  child: Text(w,
+                      textAlign: TextAlign.center,
+                      style: AppTheme.quick(
+                          size: 11,
+                          weight: FontWeight.w700,
+                          color: AppColors.inkFaint)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          activity.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                  child: CircularProgressIndicator(color: AppColors.violet)),
+            ),
+            error: (_, _) => Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Could not load activity',
+                  style: AppTheme.quick(
+                      size: 13, color: AppColors.inkFaint)),
+            ),
+            data: (active) => _grid(active, today),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                    color: AppColors.violet,
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+              const SizedBox(width: 6),
+              Text('Days you practised',
+                  style: AppTheme.quick(
+                      size: 11, color: AppColors.inkFaint)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _grid(Set<String> active, DateTime today) {
+    final daysInMonth = DateTime(_month.year, _month.month + 1, 0).day;
+    final leading = _month.weekday - 1; // Monday = 0 blanks
+    final cells = <Widget>[];
+    for (var i = 0; i < leading; i++) {
+      cells.add(const SizedBox());
+    }
+    for (var day = 1; day <= daysInMonth; day++) {
+      final d = DateTime(_month.year, _month.month, day);
+      final iso = '${d.year}-${_two(d.month)}-${_two(d.day)}';
+      final on = active.contains(iso);
+      final isToday = d == today;
+      cells.add(Container(
+        margin: const EdgeInsets.all(3),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: on ? AppColors.violet : null,
+          borderRadius: BorderRadius.circular(10),
+          border: isToday
+              ? Border.all(color: AppColors.violetDark, width: 1.5)
+              : null,
+        ),
+        child: Text('$day',
+            style: AppTheme.quick(
+                size: 13,
+                weight: FontWeight.w600,
+                color: on ? AppColors.white : AppColors.inkSoft)),
+      ));
+    }
+    return GridView.count(
+      crossAxisCount: 7,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      children: cells,
     );
   }
 }

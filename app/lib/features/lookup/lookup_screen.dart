@@ -178,12 +178,22 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
             error: (e, _) => _ErrorCard(word: currentWord),
             data: (entry) => FadeUp(
               key: ValueKey(entry.headword),
-              child: EntryCard(
-                entry: entry,
-                relations: relations.value ?? const WordRelations(),
-                relationsLoading: relations.isLoading,
-                onLookup: (w) => _lookup(w, correct: false),
-                onSave: () {},
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (entry.correctedFrom != null) ...[
+                    _DidYouMean(
+                        shown: entry.headword, typed: entry.correctedFrom!),
+                    const SizedBox(height: 10),
+                  ],
+                  EntryCard(
+                    entry: entry,
+                    relations: relations.value ?? const WordRelations(),
+                    relationsLoading: relations.isLoading,
+                    onLookup: (w) => _lookup(w, correct: false),
+                    onSave: () {},
+                  ),
+                ],
               ),
             ),
           ),
@@ -191,6 +201,48 @@ class _LookupScreenState extends ConsumerState<LookupScreen> {
       ],
     );
   }
+}
+
+/// Google-style spelling note shown when the search was auto-corrected:
+/// "Showing results for **receive** — you searched *recieve*".
+class _DidYouMean extends StatelessWidget {
+  const _DidYouMean({required this.shown, required this.typed});
+  final String shown;
+  final String typed;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.violetLight,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.auto_fix_high_rounded,
+                size: 16, color: AppColors.violet),
+            const SizedBox(width: 10),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  style: AppTheme.quick(
+                      size: 13, height: 1.35, color: AppColors.inkSoft),
+                  children: [
+                    const TextSpan(text: 'Showing results for '),
+                    TextSpan(
+                        text: shown,
+                        style: AppTheme.quick(
+                            size: 13,
+                            weight: FontWeight.w700,
+                            color: AppColors.violetDark)),
+                    TextSpan(text: '  ·  you searched “$typed”'),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _SearchPrompt extends StatelessWidget {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../api/api_client.dart';
 import '../../api/providers.dart';
@@ -9,6 +10,14 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_chip.dart';
+import '../../widgets/bounce_press.dart';
+
+/// Google OAuth client id, supplied at build time via
+/// `--dart-define=GOOGLE_CLIENT_ID=...apps.googleusercontent.com`. When empty
+/// (no credentials configured) the Google button is hidden so the app still
+/// builds and runs. ponytail: Google returns a verified email/id_token; the
+/// backend (POST /auth/google) checks it — we just forward the token.
+const _googleClientId = String.fromEnvironment('GOOGLE_CLIENT_ID');
 
 /// Sign-in / register gate. Email + password; register also picks a native
 /// language (drives the translation extra). ponytail: one screen, a bool toggle
@@ -27,6 +36,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _register = false;
   String _lang = 'ru';
   String? _error;
+  bool _googleInited = false;
 
   @override
   void dispose() {
@@ -79,6 +89,37 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     } catch (e) {
       // Defensive: never fail silently, even on an unexpected error type.
       if (mounted) setState(() => _error = 'Something went wrong. Please try again.');
+    }
+  }
+
+  /// Obtain a Google ID token via google_sign_in (v7) and hand it to the auth
+  /// controller — same success path as login(). ponytail: initialize once with
+  /// GOOGLE_CLIENT_ID (used as web clientId and mobile serverClientId so the
+  /// backend gets a token minted for its own audience).
+  Future<void> _googleSignIn() async {
+    setState(() => _error = null);
+    try {
+      if (!_googleInited) {
+        await GoogleSignIn.instance
+            .initialize(clientId: _googleClientId, serverClientId: _googleClientId);
+        _googleInited = true;
+      }
+      final account = await GoogleSignIn.instance.authenticate();
+      final idToken = account.authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw Exception('No Google ID token returned');
+      }
+      await ref.read(authControllerProvider.notifier).googleSignIn(idToken);
+      // On success the gate swaps to the app shell (same as login()).
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(const SnackBar(
+              content: Text('Google sign-in failed. Please try again.')));
+      }
     }
   }
 
@@ -189,6 +230,14 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         ),
                     ],
                   ),
+                  // Google is an additional option — only shown when a client id
+                  // was supplied at build time (else it stays hidden).
+                  if (_googleClientId.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _orDivider(),
+                    const SizedBox(height: 16),
+                    _googleButton(loading),
+                  ],
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: loading
@@ -246,6 +295,50 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide.none,
+          ),
+        ),
+      );
+
+  Widget _orDivider() => Row(
+        children: [
+          Expanded(child: Divider(color: AppColors.inkFaint.withValues(alpha: 0.3))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text('or',
+                style: AppTheme.quick(size: 12.5, color: AppColors.inkFaint)),
+          ),
+          Expanded(child: Divider(color: AppColors.inkFaint.withValues(alpha: 0.3))),
+        ],
+      );
+
+  // Google-styled: white surface, dark label, coloured "G" mark.
+  Widget _googleButton(bool loading) => BouncePress(
+        onTap: loading ? null : _googleSignIn,
+        pressedScale: 0.97,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.inkFaint.withValues(alpha: 0.3)),
+            boxShadow: AppColors.shadowSm,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('G',
+                  style: AppTheme.baloo(
+                      size: 18,
+                      weight: FontWeight.w800,
+                      color: const Color(0xFF4285F4))),
+              const SizedBox(width: 10),
+              Text('Continue with Google',
+                  style: AppTheme.baloo(
+                      size: 14.5,
+                      weight: FontWeight.w700,
+                      color: AppColors.ink)),
+            ],
           ),
         ),
       );

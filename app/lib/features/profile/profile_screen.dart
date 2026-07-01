@@ -12,6 +12,7 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/app_chip.dart';
 import '../../widgets/section_label.dart';
+import '../admin/admin_screen.dart';
 
 /// Signed-in user's profile: avatar + identity, live stat tiles (reusing the
 /// Progress dashboard pattern), and a log-out action. Reads existing providers
@@ -32,6 +33,7 @@ class ProfileScreen extends ConsumerWidget {
     final nativeLanguage = (user?['native_language'] as String?);
     final level = (user?['current_level'] as String?);
     final avatar = (user?['avatar'] as String?);
+    final isAdmin = user?['is_admin'] == true;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -87,6 +89,27 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 10),
           _getAppCard(),
         ],
+        if (isAdmin) ...[
+          const SizedBox(height: 24),
+          const SectionLabel('Admin'),
+          const SizedBox(height: 10),
+          AppCard(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminScreen()),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.admin_panel_settings,
+                    color: AppColors.violet, size: 22),
+                const SizedBox(width: 12),
+                Text('Admin dashboard',
+                    style: AppTheme.baloo(size: 15, weight: FontWeight.w700)),
+                const Spacer(),
+                Icon(Icons.chevron_right, color: AppColors.inkFaint),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         AppButton(
           label: 'Log out',
@@ -94,8 +117,61 @@ class ProfileScreen extends ConsumerWidget {
           bg: AppColors.coral,
           onTap: () => ref.read(authControllerProvider.notifier).logout(),
         ),
+        const SizedBox(height: 12),
+        // Danger zone — permanent, so it's a plain text button, not a big CTA.
+        TextButton(
+          onPressed: () => _confirmDelete(context, ref),
+          child: Text('Delete account',
+              style: AppTheme.quick(
+                  size: 13.5,
+                  weight: FontWeight.w700,
+                  color: AppColors.coralDark)),
+        ),
       ],
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text('Delete account?',
+            style: AppTheme.baloo(size: 20, weight: FontWeight.w800)),
+        content: Text(
+          'This permanently deletes your account and all your data. '
+          'This cannot be undone.',
+          style: AppTheme.quick(size: 14, height: 1.4, color: AppColors.inkSoft),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel',
+                style: AppTheme.quick(
+                    size: 14, weight: FontWeight.w700, color: AppColors.inkSoft)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Delete',
+                style: AppTheme.quick(
+                    size: 14,
+                    weight: FontWeight.w800,
+                    color: AppColors.coralDark)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref.read(authControllerProvider.notifier).deleteAccount();
+      // On success the gate returns to AuthScreen automatically.
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
   }
 
   /// APK download + iOS "add to home screen" hint (web only).

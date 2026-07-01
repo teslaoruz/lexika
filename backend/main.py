@@ -21,9 +21,11 @@ from db import engine, Base, get_db
 import models
 from models import (
     User, Word, WordFamily, Deck, DeckCard, CardProgress, ReviewLog, UserStats,
-    Cohort,
+    Cohort, CohortMember, CohortDeck,
 )
-from lookup import get_or_fetch_word, WordNotFound, fetch_examples
+from lookup import (
+    get_or_fetch_word, WordNotFound, fetch_examples, suggest_spelling, autocomplete,
+)
 from auth import current_user, hash_password, verify_password, new_token
 import sm2
 import gamify
@@ -49,6 +51,14 @@ async def lifespan(app: FastAPI):
             "ON review_log (user_id, reviewed_at)"))
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_users_cohort_id ON users (cohort_id)"))
+        # Backfill the old single users.cohort_id into the new multi-class
+        # membership table (idempotent — only inserts pairs not already present).
+        conn.execute(text(
+            "INSERT INTO cohort_members (user_id, cohort_id, joined_at) "
+            "SELECT id, cohort_id, now() FROM users u "
+            "WHERE cohort_id IS NOT NULL AND NOT EXISTS ("
+            "  SELECT 1 FROM cohort_members m "
+            "  WHERE m.user_id = u.id AND m.cohort_id = u.cohort_id)"))
     yield
 
 
@@ -80,6 +90,23 @@ def health(db: Session = Depends(get_db)):
 
 
 # --------------------------------------------------------------------- /auth
+# Admins can see everyone (the /admin dashboard). ponytail: membership is an env
+# allowlist of emails, not a DB role column — set LEXIKA_ADMIN_EMAILS=a@x,b@y.
+_ADMIN_EMAILS = {
+    e.strip().lower() for e in os.getenv("LEXIKA_ADMIN_EMAILS", "").split(",") if e.strip()
+}
+
+
+def _is_admin(u: User) -> bool:
+    return bool(u.email and u.email.lower() in _ADMIN_EMAILS)
+
+
+def require_admin(user: User = Depends(current_user)) -> User:
+    if not _is_admin(user):
+        raise HTTPException(403, "admin only")
+    return user
+
+
 def _user_out(u: User) -> dict:
     return {
         "id": u.id,
@@ -88,6 +115,7 @@ def _user_out(u: User) -> dict:
         "native_language": u.native_language,
         "current_level": u.current_level,
         "avatar": u.avatar,
+        "is_admin": _is_admin(u),
     }
 
 
@@ -160,9 +188,95 @@ def login(body: Login, db: Session = Depends(get_db)):
     return {"token": u.token, "user": _user_out(u)}
 
 
+# Google Sign-In: the app sends the Google-issued ID token; we verify it with
+# Google (no password, and the email is provider-verified — this is the real fix
+# for "any random email works"). ponytail: verify via Google's tokeninfo endpoint
+# with stdlib urllib — no google-auth dependency, no local JWKS caching.
+_GOOGLE_CLIENT_IDS = {
+    c.strip() for c in os.getenv("GOOGLE_CLIENT_IDS", "").split(",") if c.strip()
+}
+
+
+class GoogleAuth(BaseModel):
+    id_token: str
+
+
+@app.post("/auth/google")
+def auth_google(body: GoogleAuth, db: Session = Depends(get_db)):
+    import json
+    import urllib.parse
+    import urllib.request
+
+    try:
+        url = "https://oauth2.googleapis.com/tokeninfo?" + urllib.parse.urlencode(
+            {"id_token": body.id_token}
+        )
+        with urllib.request.urlopen(url, timeout=6) as resp:  # noqa: S310 (fixed host)
+            claims = json.loads(resp.read())
+    except Exception:
+        raise HTTPException(401, "could not verify Google sign-in")
+
+    # aud must be one of our own client IDs, or anyone could mint a token for a
+    # different app and log in here. Skip the check only if none are configured
+    # (dev), and say so loudly in the logs.
+    aud = claims.get("aud")
+    if _GOOGLE_CLIENT_IDS and aud not in _GOOGLE_CLIENT_IDS:
+        raise HTTPException(401, "Google sign-in was for a different app")
+    if not _GOOGLE_CLIENT_IDS:
+        print("WARN: GOOGLE_CLIENT_IDS unset — skipping audience check (dev only)")
+
+    email = (claims.get("email") or "").strip().lower()
+    if not email or claims.get("email_verified") not in ("true", True):
+        raise HTTPException(401, "Google account has no verified email")
+
+    u = db.scalar(select(User).where(User.email == email))
+    if not u:
+        u = User(
+            email=email,
+            display_name=claims.get("name") or claims.get("given_name"),
+            native_language="ru",
+            auth_provider="google",
+            token=new_token(),
+        )
+        db.add(u)
+    else:
+        u.token = new_token()  # rotate on each sign-in
+        if not u.auth_provider:
+            u.auth_provider = "google"
+    db.commit()
+    db.refresh(u)
+    return {"token": u.token, "user": _user_out(u)}
+
+
 @app.get("/auth/me")
 def me(user: User = Depends(current_user)):
     return _user_out(user)
+
+
+@app.delete("/auth/me", status_code=204)
+def delete_account(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Permanently delete the signed-in user and everything owned by them:
+    progress, review history, stats, class memberships, their own decks, and any
+    classes they teach (with those classes' memberships and shared-deck links)."""
+    uid = user.id
+    # Classes this user teaches → drop their memberships + shared-deck links first.
+    taught = db.scalars(select(Cohort.id).where(Cohort.created_by == uid)).all()
+    if taught:
+        db.execute(delete(CohortMember).where(CohortMember.cohort_id.in_(taught)))
+        db.execute(delete(CohortDeck).where(CohortDeck.cohort_id.in_(taught)))
+        db.execute(delete(Cohort).where(Cohort.id.in_(taught)))
+    # This user's own decks (+ their cards + any share links pointing at them).
+    my_decks = db.scalars(select(Deck.id).where(Deck.user_id == uid)).all()
+    if my_decks:
+        db.execute(delete(DeckCard).where(DeckCard.deck_id.in_(my_decks)))
+        db.execute(delete(CohortDeck).where(CohortDeck.deck_id.in_(my_decks)))
+        db.execute(delete(Deck).where(Deck.id.in_(my_decks)))
+    db.execute(delete(CohortMember).where(CohortMember.user_id == uid))
+    db.execute(delete(CardProgress).where(CardProgress.user_id == uid))
+    db.execute(delete(ReviewLog).where(ReviewLog.user_id == uid))
+    db.execute(delete(UserStats).where(UserStats.user_id == uid))
+    db.delete(user)
+    db.commit()
 
 
 class ProfileUpdate(BaseModel):
@@ -215,15 +329,33 @@ def lookup(
     correct: bool = Query(True),
     db: Session = Depends(get_db),
 ):
-    # `correct` enables typo-correction for the search box. Taps on words that are
-    # already real (synonyms, deck cards) pass correct=false so a word the free
-    # dictionary happens to lack (e.g. "saltiness") returns 404 instead of being
-    # silently swapped for a wrong near-spelling.
+    # `correct` enables Google-style spelling help for the search box. Taps on
+    # words already known to be real (synonyms, deck cards) pass correct=false so a
+    # word the free dictionary happens to lack returns 404 rather than a near-miss.
+    original = word.strip().lower()
     try:
-        w = get_or_fetch_word(db, word, correct=correct)
+        # Exact match first — a real word is shown as-is, never "corrected".
+        return word_to_lookup(get_or_fetch_word(db, original, correct=False))
     except WordNotFound:
+        pass
+    if not correct:
         raise HTTPException(status_code=404, detail=f"'{word}' is not a real word")
-    return word_to_lookup(w)
+
+    # Misspelled: show the closest real word, but tell the user we corrected it
+    # ("Showing results for X — you searched Y"), like a search engine.
+    import httpx
+    with httpx.Client(timeout=15) as client:
+        candidates = suggest_spelling(client, original)
+    for sug in candidates:
+        try:
+            w = get_or_fetch_word(db, sug, correct=False)
+        except WordNotFound:
+            continue
+        out = word_to_lookup(w)
+        if w.headword != original:
+            out["corrected_from"] = original  # UI shows the "did you mean" note
+        return out
+    raise HTTPException(status_code=404, detail=f"'{word}' is not a real word")
 
 
 @app.get("/words/{word}/examples")
@@ -258,6 +390,15 @@ def suggest(q: str = Query(""), limit: int = Query(8, ge=1, le=20), db: Session 
         if word not in best or (rank is not None and (best[word] is None or rank < best[word])):
             best[word] = rank
     ordered = sorted(best, key=lambda w: (best[w] is None, best[w] if best[w] is not None else 0, w))
+    # Words the user already has (catalogue + cache) come first; if that's thin,
+    # fill with high-quality Datamuse completions so autocomplete isn't dominated
+    # by obscure alphabetically-first words. Best-effort — [] if Datamuse is down.
+    if len(ordered) < limit:
+        have = set(ordered)
+        for w in autocomplete(prefix, limit):
+            if w not in have:
+                ordered.append(w)
+                have.add(w)
     return ordered[:limit]
 
 
@@ -314,12 +455,76 @@ def relations(word: str, db: Session = Depends(get_db)):
     }
 
 
+# ---------------------------------------------------------- class/deck helpers
+def _user_cohort_ids(db: Session, uid: int) -> list[int]:
+    """Every class the user is a member of."""
+    return db.scalars(
+        select(CohortMember.cohort_id).where(CohortMember.user_id == uid)
+    ).all()
+
+
+def _shared_deck_ids_for_user(db: Session, uid: int) -> list[int]:
+    """Deck ids shared to any class the user belongs to (the live class decks)."""
+    cohort_ids = _user_cohort_ids(db, uid)
+    if not cohort_ids:
+        return []
+    return db.scalars(
+        select(CohortDeck.deck_id).where(CohortDeck.cohort_id.in_(cohort_ids))
+    ).all()
+
+
+def _seed_progress(db: Session, user_ids, word_ids) -> None:
+    """Ensure a card_progress row exists for each (user, word) so the words show
+    up in that user's due queue. Idempotent. Caller commits."""
+    user_ids, word_ids = list(user_ids), list(word_ids)
+    if not user_ids or not word_ids:
+        return
+    for uid in user_ids:
+        have = set(db.scalars(
+            select(CardProgress.word_id).where(
+                CardProgress.user_id == uid, CardProgress.word_id.in_(word_ids))
+        ).all())
+        for wid in word_ids:
+            if wid not in have:
+                db.add(CardProgress(user_id=uid, word_id=wid, next_review_at=now()))
+
+
+def _accessible_deck(db: Session, user: User, deck_id: int) -> Deck | None:
+    """A deck the user may read: their own, a system deck, or one shared to a
+    class they're in. Returns None if not accessible."""
+    deck = db.get(Deck, deck_id)
+    if not deck:
+        return None
+    if deck.user_id is None or deck.user_id == user.id:
+        return deck
+    if deck.id in set(_shared_deck_ids_for_user(db, user.id)):
+        return deck
+    return None
+
+
 # -------------------------------------------------------------------- /decks
 @app.get("/decks")
 def list_decks(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    shared_ids = set(_shared_deck_ids_for_user(db, user.id))
+    # Which class each shared deck came from (for the "from <class>" label).
+    deck_class: dict[int, str] = {}
+    cohort_ids = _user_cohort_ids(db, user.id)
+    if cohort_ids:
+        for did, cname in db.execute(
+            select(CohortDeck.deck_id, Cohort.name)
+            .join(Cohort, Cohort.id == CohortDeck.cohort_id)
+            .where(CohortDeck.cohort_id.in_(cohort_ids))
+        ).all():
+            deck_class.setdefault(did, cname)
     decks = db.scalars(
-        select(Deck).where((Deck.user_id == user.id) | (Deck.user_id.is_(None)))
+        select(Deck).where(
+            (Deck.user_id == user.id)
+            | (Deck.user_id.is_(None))
+            | (Deck.id.in_(shared_ids) if shared_ids else False)
+        )
     ).all()
+    # Name of each shared deck's teacher, for the "from <teacher>" label.
+    teacher_names: dict[int, str] = {}
     out = []
     for d in decks:
         card_count = db.scalar(
@@ -333,12 +538,23 @@ def list_decks(user: User = Depends(current_user), db: Session = Depends(get_db)
             .where(DeckCard.deck_id == d.id)
             .where((CardProgress.id.is_(None)) | (CardProgress.next_review_at <= now()))
         )
+        is_shared = d.id in shared_ids and d.user_id != user.id
+        shared_by = None
+        if is_shared and d.user_id is not None:
+            if d.user_id not in teacher_names:
+                t = db.get(User, d.user_id)
+                teacher_names[d.user_id] = (t.display_name or (t.email.split("@")[0] if t and t.email else None) or "teacher") if t else "teacher"
+            shared_by = teacher_names[d.user_id]
         out.append({
             "id": d.id,
             "name": d.name,
             "card_count": card_count or 0,
             "due_count": due_count or 0,
-            "is_system_deck": d.is_system_deck,
+            # Shared class decks are read-only for students (can't add/delete words).
+            "is_system_deck": d.is_system_deck or is_shared,
+            "is_shared": is_shared,
+            "shared_by": shared_by,
+            "shared_class": deck_class.get(d.id) if is_shared else None,
         })
     return out
 
@@ -430,8 +646,35 @@ def add_card(deck_id: int, body: CardAdd, user: User = Depends(current_user), db
         )
         if not prog:
             db.add(CardProgress(user_id=user.id, word_id=body.word_id, next_review_at=now()))
+        # If this deck is shared to any class, push the new word to every member
+        # so a teacher's edit shows up live in their students' review queues.
+        cohort_ids = db.scalars(
+            select(CohortDeck.cohort_id).where(CohortDeck.deck_id == deck_id)
+        ).all()
+        if cohort_ids:
+            members = db.scalars(
+                select(CohortMember.user_id)
+                .where(CohortMember.cohort_id.in_(cohort_ids))
+                .where(CohortMember.user_id != user.id)
+            ).all()
+            _seed_progress(db, members, [body.word_id])
         db.commit()
     return {"ok": True}
+
+
+@app.delete("/decks/{deck_id}/cards/{word_id}", status_code=204)
+def delete_card(deck_id: int, word_id: int, user: User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """Remove a word from one of the user's own decks. ponytail: card_progress is
+    left intact (per user/word, may be used by other decks); only the deck link
+    goes. Shared/system decks aren't editable here."""
+    deck = db.get(Deck, deck_id)
+    if not deck or deck.user_id != user.id:
+        raise HTTPException(404, "deck not found")
+    db.execute(
+        delete(DeckCard).where(DeckCard.deck_id == deck_id, DeckCard.word_id == word_id)
+    )
+    db.commit()
 
 
 @app.get("/words/{word_id}/saved")
@@ -451,8 +694,8 @@ def word_saved(word_id: int, user: User = Depends(current_user), db: Session = D
 @app.get("/decks/{deck_id}/cards")
 def deck_cards(deck_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Words saved in a deck (newest first), for the deck-detail view."""
-    deck = db.get(Deck, deck_id)
-    if not deck or (deck.user_id is not None and deck.user_id != user.id):
+    deck = _accessible_deck(db, user, deck_id)
+    if not deck:
         raise HTTPException(404, "deck not found")
     rows = db.scalars(
         select(Word)
@@ -475,8 +718,8 @@ def deck_cards(deck_id: int, user: User = Depends(current_user), db: Session = D
 def deck_review(deck_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """All cards in a deck as review cards, for practising one deck end to end
     (not just the due subset). Same shape as /review/due."""
-    deck = db.get(Deck, deck_id)
-    if not deck or (deck.user_id is not None and deck.user_id != user.id):
+    deck = _accessible_deck(db, user, deck_id)
+    if not deck:
         raise HTTPException(404, "deck not found")
     rows = db.scalars(
         select(Word)
@@ -712,6 +955,30 @@ def stats_activity(days: int = Query(120, ge=7, le=400), user: User = Depends(cu
     return {"active_dates": dates}
 
 
+@app.get("/stats/learned")
+def stats_learned(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """The words the user has learned (survived >= LEARNED_REPS repetitions) —
+    the tap-through list behind the 'words learned' tile. Newest first."""
+    rows = db.scalars(
+        select(Word)
+        .join(CardProgress, CardProgress.word_id == Word.id)
+        .where(CardProgress.user_id == user.id)
+        .where(CardProgress.repetitions >= LEARNED_REPS)
+        .order_by(CardProgress.last_reviewed_at.desc().nullslast())
+    ).all()
+    lang = user.native_language
+    return [
+        {
+            "word_id": w.id,
+            "headword": w.headword,
+            "definition_en": w.definition_en,
+            "translation": (w.translations or {}).get(lang) if lang else None,
+            "cefr_level": w.cefr_level,
+        }
+        for w in rows
+    ]
+
+
 @app.get("/stats")
 def stats(user: User = Depends(current_user), db: Session = Depends(get_db)):
     s = _get_or_create_stats(db, user.id)
@@ -764,8 +1031,9 @@ def accuracy_by_level(user: User = Depends(current_user), db: Session = Depends(
 
 
 # ---------------------------------------------------- /cohorts + /leaderboard
-# ponytail: one cohort per student (cohort_id on the user), join by short code.
-# A join table would let a student be in several classes — add it then.
+# A student can belong to several classes (cohort_members join table). Classes a
+# user teaches are cohorts they created; decks are shared *to a class* (cohort_decks),
+# not copied per student, so late joiners and teacher edits are seen live.
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no I/O/0/1 ambiguity
 
 
@@ -777,16 +1045,58 @@ def _new_join_code(db: Session) -> str:
     raise HTTPException(500, "could not allocate a join code")  # ~never at this scale
 
 
-def _cohort_out(c: Cohort, member_count: int, viewer_id: int | None = None) -> dict:
+def _cohort_out(c: Cohort, member_count: int, viewer_id: int | None = None,
+                is_member: bool | None = None) -> dict:
     return {
         "id": c.id, "name": c.name, "join_code": c.join_code,
         "member_count": member_count,
         "is_teacher": viewer_id is not None and c.created_by == viewer_id,
+        "is_member": is_member,
     }
 
 
 def _member_count(db: Session, cohort_id: int) -> int:
-    return db.scalar(select(func.count(User.id)).where(User.cohort_id == cohort_id)) or 0
+    return db.scalar(
+        select(func.count(CohortMember.id)).where(CohortMember.cohort_id == cohort_id)
+    ) or 0
+
+
+def _is_member(db: Session, uid: int, cohort_id: int) -> bool:
+    return db.scalar(select(CohortMember.id).where(
+        CohortMember.user_id == uid, CohortMember.cohort_id == cohort_id)) is not None
+
+
+def _add_member(db: Session, uid: int, cohort_id: int) -> None:
+    if not _is_member(db, uid, cohort_id):
+        db.add(CohortMember(user_id=uid, cohort_id=cohort_id))
+
+
+def _member_ids(db: Session, cohort_id: int) -> list[int]:
+    return db.scalars(
+        select(CohortMember.user_id).where(CohortMember.cohort_id == cohort_id)
+    ).all()
+
+
+def _display_name(m: User) -> str:
+    return m.display_name or (m.email.split("@")[0] if m.email else None) or f"User {m.id}"
+
+
+def _weekly_xp(db: Session, ids: list[int], days: int) -> dict[int, int]:
+    """Recompute weekly XP from review_log for a set of users (ponytail: no stored
+    per-period XP). Shared by the leaderboard and the teacher dashboard."""
+    xp = {i: 0 for i in ids}
+    if not ids:
+        return xp
+    since = now() - timedelta(days=days)
+    rows = db.execute(
+        select(ReviewLog.user_id, ReviewLog.result, Word.cefr_level)
+        .join(Word, Word.id == ReviewLog.word_id)
+        .where(ReviewLog.user_id.in_(ids))
+        .where(ReviewLog.reviewed_at >= since)
+    ).all()
+    for uid, result, cefr in rows:
+        xp[uid] += gamify.xp_for(result, cefr)
+    return xp
 
 
 class CohortCreate(BaseModel):
@@ -800,11 +1110,12 @@ def create_cohort(body: CohortCreate, user: User = Depends(current_user), db: Se
         raise HTTPException(422, "name required")
     c = Cohort(name=name, join_code=_new_join_code(db), created_by=user.id)
     db.add(c)
+    db.flush()
+    _add_member(db, user.id, c.id)  # creator joins their own class
+    user.cohort_id = c.id  # legacy 'active class' hint
     db.commit()
     db.refresh(c)
-    user.cohort_id = c.id  # creator joins their own class
-    db.commit()
-    return _cohort_out(c, _member_count(db, c.id), user.id)
+    return _cohort_out(c, _member_count(db, c.id), user.id, is_member=True)
 
 
 class CohortJoin(BaseModel):
@@ -816,18 +1127,100 @@ def join_cohort(body: CohortJoin, user: User = Depends(current_user), db: Sessio
     c = db.scalar(select(Cohort).where(Cohort.join_code == body.code.strip().upper()))
     if not c:
         raise HTTPException(404, "no class with that code")
-    user.cohort_id = c.id
+    _add_member(db, user.id, c.id)
+    user.cohort_id = c.id  # legacy 'active class' hint
+    # Seed the class's shared decks into the new member's review queue so they
+    # see everything already shared to the class (not just future words).
+    deck_ids = db.scalars(
+        select(CohortDeck.deck_id).where(CohortDeck.cohort_id == c.id)
+    ).all()
+    if deck_ids:
+        word_ids = db.scalars(
+            select(DeckCard.word_id).where(DeckCard.deck_id.in_(deck_ids))
+        ).all()
+        _seed_progress(db, [user.id], word_ids)
     db.commit()
-    return _cohort_out(c, _member_count(db, c.id), user.id)
+    return _cohort_out(c, _member_count(db, c.id), user.id, is_member=True)
 
 
-@app.get("/cohort")
-def my_cohort(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """The current user's class, or null if they haven't joined one."""
-    if not user.cohort_id:
-        return {"cohort": None}
-    c = db.get(Cohort, user.cohort_id)
-    return {"cohort": _cohort_out(c, _member_count(db, c.id), user.id) if c else None}
+@app.get("/cohorts/mine")
+def my_cohorts(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Every class the student is a member of (they can belong to several)."""
+    cohort_ids = _user_cohort_ids(db, user.id)
+    cohorts = db.scalars(
+        select(Cohort).where(Cohort.id.in_(cohort_ids)).order_by(Cohort.id)
+    ).all() if cohort_ids else []
+    return {
+        "classes": [
+            _cohort_out(c, _member_count(db, c.id), user.id, is_member=True)
+            for c in cohorts
+        ]
+    }
+
+
+@app.get("/cohorts/{cohort_id}")
+def cohort_detail(cohort_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Full info about one class: members, the decks shared to it, and (for the
+    teacher) whether they own it. Any member or the teacher may view it."""
+    c = db.get(Cohort, cohort_id)
+    if not c:
+        raise HTTPException(404, "class not found")
+    is_teacher = c.created_by == user.id
+    if not is_teacher and not _is_member(db, user.id, cohort_id):
+        raise HTTPException(403, "not a member of this class")
+
+    members = db.scalars(
+        select(User).join(CohortMember, CohortMember.user_id == User.id)
+        .where(CohortMember.cohort_id == cohort_id)
+    ).all()
+    deck_rows = db.scalars(
+        select(Deck).join(CohortDeck, CohortDeck.deck_id == Deck.id)
+        .where(CohortDeck.cohort_id == cohort_id)
+    ).all()
+    teacher = db.get(User, c.created_by) if c.created_by else None
+    return {
+        **_cohort_out(c, len(members), user.id, is_member=_is_member(db, user.id, cohort_id)),
+        "teacher_name": _display_name(teacher) if teacher else None,
+        "members": [
+            {"user_id": m.id, "display_name": _display_name(m),
+             "is_teacher": m.id == c.created_by}
+            for m in members
+        ],
+        "decks": [
+            {"id": d.id, "name": d.name,
+             "card_count": db.scalar(
+                 select(func.count(DeckCard.id)).where(DeckCard.deck_id == d.id)) or 0}
+            for d in deck_rows
+        ],
+    }
+
+
+@app.post("/cohorts/{cohort_id}/leave", status_code=204)
+def leave_cohort(cohort_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Leave a class. The teacher can't leave their own class — they delete it."""
+    c = db.get(Cohort, cohort_id)
+    if c and c.created_by == user.id:
+        raise HTTPException(400, "the teacher can't leave — delete the class instead")
+    db.execute(delete(CohortMember).where(
+        CohortMember.user_id == user.id, CohortMember.cohort_id == cohort_id))
+    if user.cohort_id == cohort_id:
+        user.cohort_id = None
+    db.commit()
+
+
+@app.delete("/cohorts/{cohort_id}", status_code=204)
+def delete_cohort(cohort_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Delete a class the user teaches — removes all memberships and shared-deck
+    links (the underlying decks and per-user progress are untouched)."""
+    c = db.get(Cohort, cohort_id)
+    if not c or c.created_by != user.id:
+        raise HTTPException(404, "class not found")
+    db.execute(delete(CohortMember).where(CohortMember.cohort_id == cohort_id))
+    db.execute(delete(CohortDeck).where(CohortDeck.cohort_id == cohort_id))
+    db.execute(text("UPDATE users SET cohort_id = NULL WHERE cohort_id = :cid"),
+               {"cid": cohort_id})
+    db.delete(c)
+    db.commit()
 
 
 @app.get("/cohort/teaching")
@@ -837,55 +1230,54 @@ def cohort_teaching(user: User = Depends(current_user), db: Session = Depends(ge
         select(Cohort).where(Cohort.created_by == user.id).order_by(Cohort.id)
     ).all()
     return {
-        "classes": [_cohort_out(c, _member_count(db, c.id), user.id) for c in cohorts]
+        "classes": [_cohort_out(c, _member_count(db, c.id), user.id, is_member=True)
+                    for c in cohorts]
     }
 
 
-@app.get("/leaderboard")
-def leaderboard(days: int = Query(7, ge=1, le=365), user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Weekly XP ranking scoped to the user's cohort. ponytail: weekly XP is
-    recomputed from review_log (grade + word CEFR via gamify.xp_for) over the
-    window — no stored per-period XP, no game_sessions table. Aggregated in
-    Python (O(rows)); fine at ~100 users — push to a SQL CASE sum if it grows."""
-    if not user.cohort_id:
-        return {"cohort": None, "entries": []}
-    c = db.get(Cohort, user.cohort_id)
-    members = db.scalars(select(User).where(User.cohort_id == user.cohort_id)).all()
-    names = {m.id: (m.display_name or (m.email.split("@")[0] if m.email else None) or f"User {m.id}") for m in members}
-    xp = {m.id: 0 for m in members}
-
-    since = now() - timedelta(days=days)
-    rows = db.execute(
-        select(ReviewLog.user_id, ReviewLog.result, Word.cefr_level)
-        .join(Word, Word.id == ReviewLog.word_id)
-        .where(ReviewLog.user_id.in_(list(xp.keys())))
-        .where(ReviewLog.reviewed_at >= since)
+def _leaderboard_for(db: Session, c: Cohort, viewer_id: int, days: int) -> dict:
+    members = db.scalars(
+        select(User).join(CohortMember, CohortMember.user_id == User.id)
+        .where(CohortMember.cohort_id == c.id)
     ).all()
-    for uid, result, cefr in rows:
-        xp[uid] += gamify.xp_for(result, cefr)
-
+    names = {m.id: _display_name(m) for m in members}
+    xp = _weekly_xp(db, [m.id for m in members], days)
     entries = sorted(
         ({"user_id": uid, "display_name": names[uid], "weekly_xp": pts,
-          "is_me": uid == user.id} for uid, pts in xp.items()),
+          "is_me": uid == viewer_id} for uid, pts in xp.items()),
         key=lambda e: e["weekly_xp"], reverse=True,
     )
     for i, e in enumerate(entries, 1):
         e["rank"] = i
-    return {"cohort": _cohort_out(c, len(members)) if c else None, "entries": entries}
+    return {"cohort": _cohort_out(c, len(members), viewer_id), "entries": entries}
 
 
-@app.get("/cohort/students")
-def cohort_students(days: int = Query(7, ge=1, le=365), cohort_id: int | None = Query(None), user: User = Depends(current_user), db: Session = Depends(get_db)):
+@app.get("/cohorts/{cohort_id}/leaderboard")
+def cohort_leaderboard(cohort_id: int, days: int = Query(7, ge=1, le=365),
+                       user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Weekly XP ranking scoped to one class the viewer belongs to (or teaches)."""
+    c = db.get(Cohort, cohort_id)
+    if not c:
+        raise HTTPException(404, "class not found")
+    if c.created_by != user.id and not _is_member(db, user.id, cohort_id):
+        raise HTTPException(403, "not a member of this class")
+    return _leaderboard_for(db, c, user.id, days)
+
+
+@app.get("/cohorts/{cohort_id}/students")
+def cohort_students(cohort_id: int, days: int = Query(7, ge=1, le=365),
+                    user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Teacher view: per-student progress for one class the teacher owns.
-    Pass `cohort_id` to pick which class (defaults to the teacher's active one).
-    ponytail: reuses the leaderboard's weekly-XP recompute and the /stats
-    counters; no new tables, no roles beyond cohort.created_by == teacher."""
-    c = db.get(Cohort, cohort_id if cohort_id is not None else user.cohort_id) \
-        if (cohort_id is not None or user.cohort_id) else None
+    ponytail: reuses the weekly-XP recompute and the /stats counters; no new
+    tables, no roles beyond cohort.created_by == teacher."""
+    c = db.get(Cohort, cohort_id)
     if not c or c.created_by != user.id:
         raise HTTPException(403, "only the class teacher can view students")
 
-    members = db.scalars(select(User).where(User.cohort_id == c.id)).all()
+    members = db.scalars(
+        select(User).join(CohortMember, CohortMember.user_id == User.id)
+        .where(CohortMember.cohort_id == cohort_id)
+    ).all()
     ids = [m.id for m in members]
 
     stats = {s.user_id: s for s in db.scalars(select(UserStats).where(UserStats.user_id.in_(ids))).all()}
@@ -894,23 +1286,13 @@ def cohort_students(days: int = Query(7, ge=1, le=365), cohort_id: int | None = 
         .where(CardProgress.user_id.in_(ids))
         .where(CardProgress.repetitions >= LEARNED_REPS)
         .group_by(CardProgress.user_id)
-    ).all())
-
-    weekly = {i: 0 for i in ids}
-    since = now() - timedelta(days=days)
-    rows = db.execute(
-        select(ReviewLog.user_id, ReviewLog.result, Word.cefr_level)
-        .join(Word, Word.id == ReviewLog.word_id)
-        .where(ReviewLog.user_id.in_(ids))
-        .where(ReviewLog.reviewed_at >= since)
-    ).all()
-    for uid, result, cefr in rows:
-        weekly[uid] += gamify.xp_for(result, cefr)
+    ).all()) if ids else {}
+    weekly = _weekly_xp(db, ids, days)
 
     students = [
         {
             "user_id": m.id,
-            "display_name": m.display_name or (m.email.split("@")[0] if m.email else None) or f"User {m.id}",
+            "display_name": _display_name(m),
             "is_teacher": m.id == c.created_by,
             "total_xp": stats[m.id].total_xp if m.id in stats else 0,
             "current_streak": stats[m.id].current_streak if m.id in stats else 0,
@@ -925,51 +1307,102 @@ def cohort_students(days: int = Query(7, ge=1, le=365), cohort_id: int | None = 
     return {"cohort": _cohort_out(c, len(members), user.id), "students": students}
 
 
-class SendDeck(BaseModel):
+class ShareDeck(BaseModel):
     deck_id: int
-    cohort_id: int | None = None
 
 
-@app.post("/cohort/send_deck")
-def send_deck(body: SendDeck, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Teacher pushes one of their decks to every student in a class they own.
-    Pass `cohort_id` to choose which class (defaults to the active one). Each
-    student gets a deck of the same name (reused if they already have one) with
-    the same words, reviewable immediately."""
-    c = db.get(Cohort, body.cohort_id if body.cohort_id is not None else user.cohort_id) \
-        if (body.cohort_id is not None or user.cohort_id) else None
+@app.post("/cohorts/{cohort_id}/decks")
+def share_deck(cohort_id: int, body: ShareDeck, user: User = Depends(current_user),
+               db: Session = Depends(get_db)):
+    """Teacher shares one of their decks *to a class* (not copied). Every member —
+    including future joiners — sees the live deck, and the teacher's later edits
+    propagate. Seeds the deck's words into current members' review queues."""
+    c = db.get(Cohort, cohort_id)
     if not c or c.created_by != user.id:
-        raise HTTPException(403, "only the class teacher can send decks")
+        raise HTTPException(403, "only the class teacher can share decks")
     deck = db.get(Deck, body.deck_id)
     if not deck or deck.user_id != user.id:
         raise HTTPException(404, "deck not found")
 
+    if not db.scalar(select(CohortDeck.id).where(
+            CohortDeck.cohort_id == cohort_id, CohortDeck.deck_id == deck.id)):
+        db.add(CohortDeck(cohort_id=cohort_id, deck_id=deck.id))
+
     word_ids = db.scalars(
         select(DeckCard.word_id).where(DeckCard.deck_id == deck.id)
     ).all()
-    students = db.scalars(
-        select(User).where(User.cohort_id == c.id, User.id != user.id)
-    ).all()
-
-    for s in students:
-        # reuse a same-named deck if the student already has one
-        target = db.scalar(
-            select(Deck).where(Deck.user_id == s.id, Deck.name == deck.name)
-        )
-        if not target:
-            target = Deck(user_id=s.id, name=deck.name)
-            db.add(target)
-            db.flush()
-        existing = set(db.scalars(
-            select(DeckCard.word_id).where(DeckCard.deck_id == target.id)
-        ).all())
-        for wid in word_ids:
-            if wid in existing:
-                continue
-            db.add(DeckCard(deck_id=target.id, word_id=wid))
-            has_prog = db.scalar(select(CardProgress.id).where(
-                CardProgress.user_id == s.id, CardProgress.word_id == wid))
-            if not has_prog:
-                db.add(CardProgress(user_id=s.id, word_id=wid, next_review_at=now()))
+    members = [i for i in _member_ids(db, cohort_id) if i != user.id]
+    _seed_progress(db, members, word_ids)
     db.commit()
-    return {"sent_to": len(students), "words": len(word_ids)}
+    return {"shared_to": len(members), "words": len(word_ids)}
+
+
+@app.delete("/cohorts/{cohort_id}/decks/{deck_id}", status_code=204)
+def unshare_deck(cohort_id: int, deck_id: int, user: User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    """Teacher stops sharing a deck with a class. ponytail: only the link is
+    removed — members keep any progress they already made on those words."""
+    c = db.get(Cohort, cohort_id)
+    if not c or c.created_by != user.id:
+        raise HTTPException(403, "only the class teacher can manage shared decks")
+    db.execute(delete(CohortDeck).where(
+        CohortDeck.cohort_id == cohort_id, CohortDeck.deck_id == deck_id))
+    db.commit()
+
+
+# ---------------------------------------------------------------------- /admin
+@app.get("/admin/users")
+def admin_users(days: int = Query(7, ge=1, le=365),
+                admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Every user with a snapshot of what they're doing: XP, streak, words
+    learned, reviews this week, last active, and the classes they're in.
+    ponytail: one pass per aggregate over all users — fine at this scale."""
+    users = db.scalars(select(User).order_by(User.id)).all()
+    ids = [u.id for u in users]
+
+    stats = {s.user_id: s for s in db.scalars(select(UserStats).where(UserStats.user_id.in_(ids))).all()} if ids else {}
+    learned = dict(db.execute(
+        select(CardProgress.user_id, func.count(CardProgress.id))
+        .where(CardProgress.user_id.in_(ids))
+        .where(CardProgress.repetitions >= LEARNED_REPS)
+        .group_by(CardProgress.user_id)
+    ).all()) if ids else {}
+    since = now() - timedelta(days=days)
+    reviews = dict(db.execute(
+        select(ReviewLog.user_id, func.count(ReviewLog.id))
+        .where(ReviewLog.user_id.in_(ids))
+        .where(ReviewLog.reviewed_at >= since)
+        .group_by(ReviewLog.user_id)
+    ).all()) if ids else {}
+    # class memberships per user
+    classes: dict[int, list[str]] = defaultdict(list)
+    for uid, cname in db.execute(
+        select(CohortMember.user_id, Cohort.name)
+        .join(Cohort, Cohort.id == CohortMember.cohort_id)
+    ).all():
+        classes[uid].append(cname)
+
+    return {
+        "users": [
+            {
+                "id": u.id,
+                "email": u.email,
+                "display_name": u.display_name,
+                "auth_provider": u.auth_provider,
+                "native_language": u.native_language,
+                "current_level": u.current_level,
+                "is_admin": _is_admin(u),
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "total_xp": stats[u.id].total_xp if u.id in stats else 0,
+                "current_streak": stats[u.id].current_streak if u.id in stats else 0,
+                "words_learned": learned.get(u.id, 0),
+                "reviews_recent": reviews.get(u.id, 0),
+                "last_active": stats[u.id].last_active_date.isoformat()
+                if u.id in stats and stats[u.id].last_active_date else None,
+                "classes": classes.get(u.id, []),
+            }
+            for u in users
+        ],
+        "total": len(users),
+        "window_days": days,
+    }

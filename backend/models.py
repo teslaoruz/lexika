@@ -49,6 +49,30 @@ class Cohort(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class CohortMember(Base):
+    """A student's membership in a class. A student can belong to several classes
+    (replaces the single users.cohort_id). ponytail: join table, unique per pair;
+    the legacy users.cohort_id is backfilled into this on startup and kept only as
+    a fallback 'active class' hint."""
+    __tablename__ = "cohort_members"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    cohort_id: Mapped[int] = mapped_column(ForeignKey("cohorts.id"), index=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CohortDeck(Base):
+    """A deck shared *to a class* (not copied per student). Every member — including
+    ones who join later — sees the teacher's live deck; when the teacher edits it,
+    everyone sees the change because it's the same deck row. ponytail: link table,
+    no per-student copies."""
+    __tablename__ = "cohort_decks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cohort_id: Mapped[int] = mapped_column(ForeignKey("cohorts.id"), index=True)
+    deck_id: Mapped[int] = mapped_column(ForeignKey("decks.id"), index=True)
+    shared_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class WordMetadata(Base):
     """CEFR-J + AWL join table. Keyed by lowercase headword."""
     __tablename__ = "word_metadata"

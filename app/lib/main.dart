@@ -23,6 +23,14 @@ class LexikaApp extends ConsumerWidget {
       title: 'Lexika',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.themeData(),
+      // ponytail: centralise the ~480px phone-width frame for EVERY route here
+      // (tabs and pushed routes alike) so nothing renders full-width on desktop.
+      builder: (context, child) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: child,
+        ),
+      ),
       // Wait for the backend to be reachable before the auth flow runs — the
       // free-tier host sleeps when idle and a cold start can take ~a minute.
       home: const ServerGate(child: _AppRoot()),

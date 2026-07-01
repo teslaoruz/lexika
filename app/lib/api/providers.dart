@@ -66,6 +66,16 @@ class AuthController extends Notifier<AuthState> {
       _run(() => ref.read(apiClientProvider).register(email, password,
           nativeLanguage: nativeLanguage, displayName: displayName));
 
+  /// Sign in with a Google ID token (from google_sign_in).
+  Future<void> googleSignIn(String idToken) =>
+      _run(() => ref.read(apiClientProvider).authGoogle(idToken));
+
+  /// Permanently delete the account, then sign out locally.
+  Future<void> deleteAccount() async {
+    await ref.read(apiClientProvider).deleteAccount();
+    await logout();
+  }
+
   Future<void> _run(Future<Map<String, dynamic>> Function() call) async {
     state = const AuthState(loading: true);
     try {
@@ -103,8 +113,8 @@ class AuthController extends Notifier<AuthState> {
   void _invalidateUserData() {
     ref.invalidate(statsProvider);
     ref.invalidate(accuracyByLevelProvider);
-    ref.invalidate(cohortProvider);
-    ref.invalidate(leaderboardProvider);
+    ref.invalidate(myCohortsProvider);
+    ref.invalidate(teachingClassesProvider);
   }
 }
 
@@ -271,26 +281,46 @@ final suggestedWordsProvider =
   return ref.watch(apiClientProvider).suggested();
 });
 
-/// Phase 7: the user's class (null = not joined) and its weekly leaderboard.
-/// No demo fallback — these are real, user-specific, and fine to be empty.
-final cohortProvider = FutureProvider<Cohort?>((ref) async {
-  return ref.watch(apiClientProvider).myCohort();
+/// The words the user has learned — behind the "words learned" tile.
+final learnedWordsProvider =
+    FutureProvider.autoDispose<List<WordTip>>((ref) async {
+  return ref.watch(apiClientProvider).learnedWords();
 });
 
+/// Classes the student is a member of (can be several). Empty = not joined any.
+final myCohortsProvider = FutureProvider<List<Cohort>>((ref) async {
+  return ref.watch(apiClientProvider).myCohorts();
+});
+
+/// Full detail for one class (members + shared decks) — the tap-through view.
+final cohortDetailProvider =
+    FutureProvider.autoDispose.family<CohortDetail, int>((ref, cohortId) async {
+  return ref.watch(apiClientProvider).cohortDetail(cohortId);
+});
+
+/// Weekly leaderboard scoped to one class.
 final leaderboardProvider =
-    FutureProvider<List<LeaderboardEntry>>((ref) async {
-  return ref.watch(apiClientProvider).leaderboard();
+    FutureProvider.autoDispose.family<List<LeaderboardEntry>, int>(
+        (ref, cohortId) async {
+  return ref.watch(apiClientProvider).leaderboard(cohortId);
 });
 
-/// Teacher dashboard: only fetched by the class teacher (the UI gates this on
-/// cohort.isTeacher). autoDispose — only the teacher's expanded panel watches it.
+/// Teacher dashboard for one class — only fetched by that class's teacher.
 final cohortStudentsProvider =
-    FutureProvider.autoDispose<List<StudentProgress>>((ref) async {
-  return ref.watch(apiClientProvider).cohortStudents();
+    FutureProvider.autoDispose.family<List<StudentProgress>, int>(
+        (ref, cohortId) async {
+  return ref.watch(apiClientProvider).cohortStudents(cohortId);
 });
 
 /// All classes the current user teaches (created). Drives the multi-class
 /// teacher section.
 final teachingClassesProvider = FutureProvider<List<Cohort>>((ref) async {
   return ref.watch(apiClientProvider).teachingClasses();
+});
+
+/// Admin: all users with activity snapshot. autoDispose — only the admin screen
+/// watches it. Throws if the caller isn't an admin.
+final adminUsersProvider =
+    FutureProvider.autoDispose<List<AdminUser>>((ref) async {
+  return ref.watch(apiClientProvider).adminUsers();
 });

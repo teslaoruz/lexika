@@ -50,8 +50,10 @@ def main_test():
     c = TestClient(main.app)
 
     # ---- /words/suggest: prefix match, ordering, limit, empty query ----
+    # Local catalogue words come first and keep their freq_rank order; Datamuse may
+    # append more real completions (network-dependent), so assert on the prefix.
     sugg = c.get("/words/suggest", params={"q": "aber"}).json()
-    assert sugg == ["aberration", "aberrant"], sugg  # prefix match, freq_rank order
+    assert sugg[:2] == ["aberration", "aberrant"], sugg  # freq_rank order, local-first
 
     assert c.get("/words/suggest", params={"q": ""}).json() == []  # blank -> []
     assert c.get("/words/suggest", params={"q": "   "}).json() == []  # whitespace -> []
@@ -61,7 +63,7 @@ def main_test():
     assert c.get("/words/suggest", params={"q": "a", "limit": 99}).status_code == 422  # max 20
 
     # case-insensitive
-    assert c.get("/words/suggest", params={"q": "ABER"}).json() == ["aberration", "aberrant"]
+    assert c.get("/words/suggest", params={"q": "ABER"}).json()[:2] == ["aberration", "aberrant"]
 
     # ordering: ubiquitous(5000) before aberration(8000) when both match "a"? no shared
     # prefix; check rank ordering within the 'aber' set already covered. Now whole-set:

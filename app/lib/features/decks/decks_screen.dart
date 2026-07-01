@@ -254,6 +254,27 @@ class DecksScreen extends ConsumerWidget {
                         size: 12,
                         weight: FontWeight.w500,
                         color: AppColors.inkFaint)),
+                // For a teacher-shared class deck, show which class it came from.
+                if (d.isShared && d.sharedClass != null) ...[
+                  const SizedBox(height: 5),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.violetLight,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                        '📚 ${d.sharedClass}'
+                        '${d.sharedBy != null ? ' · ${d.sharedBy}' : ''}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTheme.quick(
+                            size: 11,
+                            weight: FontWeight.w700,
+                            color: AppColors.violetDark)),
+                  ),
+                ],
               ],
             ),
           ),

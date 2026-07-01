@@ -117,6 +117,24 @@ class ApiClient {
     }
   }
 
+  Future<void> _delete(Uri url) async {
+    try {
+      final res =
+          await _client.delete(url, headers: _headers()).timeout(_timeout);
+      if (res.statusCode >= 400) {
+        String msg = 'Request failed';
+        try {
+          msg = (jsonDecode(res.body) as Map)['detail']?.toString() ?? msg;
+        } catch (_) {}
+        throw ApiException(msg, status: res.statusCode);
+      }
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(_reachMessage(e));
+    }
+  }
+
   /// Probe `/health`. Used by the startup gate to detect a sleeping free-tier
   /// backend (a cold start can take ~30–50s). Uses a long timeout so a *waking*
   /// server isn't mistaken for a dead one. Returns true only on a 200.
@@ -165,6 +183,15 @@ class ApiClient {
               as Map)
           .cast<String, dynamic>();
 
+  /// Sign in with a Google ID token (from google_sign_in). Backend verifies it
+  /// with Google and upserts the user. Returns the same `{token, user}` shape.
+  Future<Map<String, dynamic>> authGoogle(String idToken) async =>
+      (await _post(_u('/auth/google'), {'id_token': idToken}) as Map)
+          .cast<String, dynamic>();
+
+  /// Permanently delete the signed-in account and all its data.
+  Future<void> deleteAccount() => _delete(_u('/auth/me'));
+
   /// [correct] enables typo-correction (search box). Pass false when the word is
   /// already known to be real (synonym/deck taps) so a dictionary miss returns a
   /// "not found" rather than a wrong near-spelling.
@@ -195,23 +222,14 @@ class ApiClient {
   Future<Deck> createDeck(String name) async => Deck.fromJson(
       await _post(_u('/decks'), {'name': name}) as Map<String, dynamic>);
 
-  Future<void> deleteDeck(int deckId) async {
-    try {
-      final res = await _client
-          .delete(_u('/decks/$deckId'), headers: _headers())
-          .timeout(_timeout);
-      if (res.statusCode >= 400) {
-        throw ApiException('Could not delete deck', status: res.statusCode);
-      }
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      throw ApiException(_reachMessage(e));
-    }
-  }
+  Future<void> deleteDeck(int deckId) => _delete(_u('/decks/$deckId'));
 
   Future<void> addCard(int deckId, int wordId) =>
       _post(_u('/decks/$deckId/cards'), {'word_id': wordId});
+
+  /// Remove one word from one of the user's own decks.
+  Future<void> deleteCard(int deckId, int wordId) =>
+      _delete(_u('/decks/$deckId/cards/$wordId'));
 
   /// Copy a shared deck (by id) into a new deck for the current user.
   Future<Deck> importDeck(int deckId) async => Deck.fromJson(
@@ -304,13 +322,28 @@ class ApiClient {
         .toList();
   }
 
-  // ---- Phase 7: cohorts + leaderboard ----
-  Future<Cohort?> myCohort() async {
-    final j = await _get(_u('/cohort')) as Map<String, dynamic>;
-    return j['cohort'] == null
-        ? null
-        : Cohort.fromJson(j['cohort'] as Map<String, dynamic>);
+  /// The words the user has learned — the list behind the "words learned" tile.
+  Future<List<WordTip>> learnedWords() async {
+    final j = await _get(_u('/stats/learned'));
+    return (j as List)
+        .map((e) => WordTip.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
+
+  // ---- Classes (multi-class): membership, detail, sharing, leaderboards ----
+
+  /// Every class the student is a member of (they can belong to several).
+  Future<List<Cohort>> myCohorts() async {
+    final j = await _get(_u('/cohorts/mine')) as Map<String, dynamic>;
+    return ((j['classes'] as List?) ?? [])
+        .map((e) => Cohort.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Full info about one class (members + shared decks) — the tap-through view.
+  Future<CohortDetail> cohortDetail(int cohortId) async =>
+      CohortDetail.fromJson(
+          await _get(_u('/cohorts/$cohortId')) as Map<String, dynamic>);
 
   Future<Cohort> createCohort(String name) async =>
       Cohort.fromJson(await _post(_u('/cohorts'), {'name': name})
@@ -320,10 +353,17 @@ class ApiClient {
       Cohort.fromJson(await _post(_u('/cohorts/join'), {'code': code})
           as Map<String, dynamic>);
 
-  /// Teacher dashboard: per-student progress for the teacher's class.
-  /// Throws ApiException(403) if the caller isn't the class teacher.
-  Future<List<StudentProgress>> cohortStudents() async {
-    final j = await _get(_u('/cohort/students')) as Map<String, dynamic>;
+  /// Leave a class (students only; the teacher deletes instead).
+  Future<void> leaveCohort(int cohortId) =>
+      _post(_u('/cohorts/$cohortId/leave'), const {});
+
+  /// Delete a class the user teaches.
+  Future<void> deleteCohort(int cohortId) => _delete(_u('/cohorts/$cohortId'));
+
+  /// Teacher dashboard: per-student progress for one class the teacher owns.
+  Future<List<StudentProgress>> cohortStudents(int cohortId) async {
+    final j =
+        await _get(_u('/cohorts/$cohortId/students')) as Map<String, dynamic>;
     return ((j['students'] as List?) ?? [])
         .map((e) => StudentProgress.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -337,19 +377,38 @@ class ApiClient {
         .toList();
   }
 
-  /// Teacher: push a deck to every student in the class. Returns how many
-  /// students received it and how many words.
-  Future<({int sentTo, int words})> sendDeckToClass(
-      int deckId, int cohortId) async {
-    final j = await _post(_u('/cohort/send_deck'),
-        {'deck_id': deckId, 'cohort_id': cohortId}) as Map;
-    return (sentTo: (j['sent_to'] ?? 0) as int, words: (j['words'] ?? 0) as int);
+  /// Teacher: share a deck *to a class* (live, not copied). Returns how many
+  /// current members were seeded and how many words.
+  Future<({int sharedTo, int words})> shareDeckToClass(
+      int cohortId, int deckId) async {
+    final j = await _post(_u('/cohorts/$cohortId/decks'), {'deck_id': deckId})
+        as Map;
+    return (
+      sharedTo: (j['shared_to'] ?? 0) as int,
+      words: (j['words'] ?? 0) as int
+    );
   }
 
-  Future<List<LeaderboardEntry>> leaderboard() async {
-    final j = await _get(_u('/leaderboard')) as Map<String, dynamic>;
+  /// Teacher: stop sharing a deck with a class.
+  Future<void> unshareDeck(int cohortId, int deckId) =>
+      _delete(_u('/cohorts/$cohortId/decks/$deckId'));
+
+  /// Weekly XP leaderboard scoped to one class.
+  Future<List<LeaderboardEntry>> leaderboard(int cohortId) async {
+    final j = await _get(_u('/cohorts/$cohortId/leaderboard'))
+        as Map<String, dynamic>;
     return ((j['entries'] as List?) ?? [])
         .map((e) => LeaderboardEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  // ---- Admin ----
+  /// All users with a snapshot of activity. Throws ApiException(403) if the
+  /// caller isn't an admin.
+  Future<List<AdminUser>> adminUsers() async {
+    final j = await _get(_u('/admin/users')) as Map<String, dynamic>;
+    return ((j['users'] as List?) ?? [])
+        .map((e) => AdminUser.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 }
