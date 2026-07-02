@@ -550,8 +550,9 @@ def list_decks(user: User = Depends(current_user), db: Session = Depends(get_db)
             "name": d.name,
             "card_count": card_count or 0,
             "due_count": due_count or 0,
-            # Shared class decks are read-only for students (can't add/delete words).
-            "is_system_deck": d.is_system_deck or is_shared,
+            # Shared class decks: members may add words (is_shared gates delete
+            # in the app), so don't mask them as system decks.
+            "is_system_deck": d.is_system_deck,
             "is_shared": is_shared,
             "shared_by": shared_by,
             "shared_class": deck_class.get(d.id) if is_shared else None,
@@ -626,9 +627,11 @@ class CardAdd(BaseModel):
 @app.post("/decks/{deck_id}/cards", status_code=201)
 def add_card(deck_id: int, body: CardAdd, user: User = Depends(current_user), db: Session = Depends(get_db)):
     deck = db.get(Deck, deck_id)
-    # Must be the caller's own deck. 404 (not 403) so we don't leak that a deck
-    # id exists for someone else. ponytail: ownership check, no ACL system.
-    if not deck or deck.user_id != user.id:
+    # Own deck, or a deck shared to a class the caller belongs to (members may
+    # add words, never delete). 404 (not 403) so we don't leak that a deck id
+    # exists for someone else. ponytail: ownership check, no ACL system.
+    if not deck or (deck.user_id != user.id
+                    and deck_id not in set(_shared_deck_ids_for_user(db, user.id))):
         raise HTTPException(404, "deck not found")
     if not db.get(Word, body.word_id):
         raise HTTPException(404, "word not found")

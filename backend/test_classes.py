@@ -54,12 +54,12 @@ def main_test():
     assert c.post("/cohorts/join", headers=_h(s1), json={"code": cb["join_code"]}).status_code == 200
     assert len(c.get("/cohorts/mine", headers=_h(s1)).json()["classes"]) == 2
 
-    # share the deck to class A → s1 (already a member) sees it live & read-only
+    # share the deck to class A → s1 (already a member) sees it live
     r = c.post(f"/cohorts/{ca['id']}/decks", headers=_h(teacher), json={"deck_id": did})
     assert r.status_code == 200 and r.json()["shared_to"] == 1, r.text
     s1_decks = c.get("/decks", headers=_h(s1)).json()
     shared = next(d for d in s1_decks if d["id"] == did)
-    assert shared["is_shared"] and shared["is_system_deck"], shared
+    assert shared["is_shared"] and not shared["is_system_deck"], shared
     # seeded into review queue
     assert any(rc["word_id"] == 1 for rc in c.get("/review/due", headers=_h(s1)).json())
 
@@ -78,6 +78,13 @@ def main_test():
     assert all(w["word_id"] != 2 for w in c.get(f"/decks/{did}/cards", headers=_h(teacher)).json())
     # a student can't delete words from a shared deck
     assert c.delete(f"/decks/{did}/cards/1", headers=_h(s1)).status_code == 404
+
+    # a member can add a word to the shared deck → visible to the teacher
+    assert c.post(f"/decks/{did}/cards", headers=_h(s1), json={"word_id": 2}).status_code == 201
+    assert any(w["word_id"] == 2 for w in c.get(f"/decks/{did}/cards", headers=_h(teacher)).json())
+    # ...but a non-member still can't
+    outsider = _reg(c, "o@x.io")
+    assert c.post(f"/decks/{did}/cards", headers=_h(outsider), json={"word_id": 2}).status_code == 404
 
     # leave one class → left with one; teacher can't leave own class
     assert c.post(f"/cohorts/{cb['id']}/leave", headers=_h(s1)).status_code == 204

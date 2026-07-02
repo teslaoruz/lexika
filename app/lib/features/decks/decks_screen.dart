@@ -221,8 +221,10 @@ class DecksScreen extends ConsumerWidget {
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => DeckDetailScreen(deck: d)),
       ),
-      // System decks can't be deleted.
-      onLongPress: d.isSystemDeck ? null : () => _confirmDelete(context, ref, d),
+      // System and class-shared decks can't be deleted.
+      onLongPress: (d.isSystemDeck || d.isShared)
+          ? null
+          : () => _confirmDelete(context, ref, d),
       radius: 22,
       child: Row(
         children: [
